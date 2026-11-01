@@ -44,7 +44,7 @@ app.use('/api',(req,res,next)=>{
 app.get('/api/modrinth/search',async(req,res)=>{
   try{
     const q=clean(req.query.query,100);
-    const url=new URL('https://api.modrinth.com/v2/search');url.searchParams.set('query',q);url.searchParams.set('index','downloads');url.searchParams.set('limit',String(limit(req.query.limit)));url.searchParams.set('offset',String(Math.max(0,Math.min(100000,Number.parseInt(req.query.page,10)||0))*limit(req.query.limit)));
+    const url=new URL('https://api.modrinth.com/v2/search');url.searchParams.set('query',q);url.searchParams.set('index',q?'relevance':'downloads');url.searchParams.set('limit',String(limit(req.query.limit)));url.searchParams.set('offset',String(Math.max(0,Math.min(100000,Number.parseInt(req.query.page,10)||0))*limit(req.query.limit)));
     const gv=clean(req.query.game_version,20),loader=clean(req.query.loader,20).toLowerCase(),facets=[];
     facets.push(['project_type:mod']);if(gv)facets.push(['versions:'+gv]);if(['fabric','forge','neoforge','quilt'].includes(loader))facets.push(['categories:'+loader]);
     if(facets.length)url.searchParams.set('facets',JSON.stringify(facets));
