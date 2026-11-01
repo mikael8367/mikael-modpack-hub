@@ -79,7 +79,7 @@ app.get('/api/curseforge/mod/:id',async(req,res)=>{
 app.get('/api/curseforge/mod/:id/files',async(req,res)=>{
   const h=cfHeaders();if(!h)return res.status(503).json({error:'Configure CURSEFORGE_API_KEY.'});
   try{const id=Number(req.params.id);if(!Number.isSafeInteger(id)||id<1)return res.status(400).json({error:'ID inválido.'});
-    const url=new URL('https://api.curseforge.com/v1/mods/'+id+'/files');url.searchParams.set('pageSize',String(limit(req.query.limit)));
+    const url=new URL('https://api.curseforge.com/v1/mods/'+id+'/files');url.searchParams.set('pageSize',String(limit(req.query.limit,50)));url.searchParams.set('index',String(Math.max(0,Math.min(100000,Number.parseInt(req.query.page,10)||0))*limit(req.query.limit,50)));
     const gv=clean(req.query.game_version,20);if(gv)url.searchParams.set('gameVersion',gv);
     const d=await getJson(url,h);res.json({total:d.pagination?.totalCount||0,files:(d.data||[]).map(f=>({id:f.id,displayName:f.displayName,fileName:f.fileName,gameVersions:f.gameVersions||[],downloadUrl:f.downloadUrl,fileLength:f.fileLength}))});
   }catch(e){res.status(e.status||502).json({error:'Falha ao consultar arquivos.'});}
@@ -90,7 +90,7 @@ app.post('/api/packs/validate',(req,res)=>{
   if(!Array.isArray(b.projects)||b.projects.length>100)return res.status(400).json({valid:false,error:'Até 100 projetos por modpack.'});
   const seen=new Set(),projects=[],errors=[];
   for(const p of b.projects){const provider=clean(p?.provider,20).toLowerCase(),id=clean(String(p?.id??''),100),key=provider+':'+id;
-    if(!['modrinth','curseforge'].includes(provider)||!id||seen.has(key)){errors.push('Projeto inválido ou duplicado.');continue;}seen.add(key);projects.push({provider,id,name:clean(p?.name,120)});}
+    if(!['modrinth','curseforge'].includes(provider)||!id||seen.has(key)){errors.push('Projeto inválido ou duplicado.');continue;}seen.add(key);projects.push({provider,id,name:clean(p?.name,120),version_id:clean(String(p?.version_id??''),100),version_name:clean(p?.version_name,160),game_version:clean(p?.game_version,20),loader:clean(p?.loader,20).toLowerCase()});}
   res.json({valid:errors.length===0,manifest:{format:'mikael-modpack-hub',version:1,name,minecraft_version:version,loader,projects},errors});
 });
 app.get('/docs',(_req,res)=>res.sendFile(path.join(root,'public','docs.html')));
