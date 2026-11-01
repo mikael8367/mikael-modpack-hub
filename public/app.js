@@ -91,3 +91,8 @@ const oldDraw=draw;draw=function(){oldDraw();syncExtraButtons()};
 const oldDrawPackSelection=drawPackSelection;drawPackSelection=function(){oldDrawPackSelection();syncExtraButtons()};
 const oldGo=go;go=function(id){oldGo(id);if(id==='library')renderLibrary()};
 renderLibrary();syncExtraButtons();
+
+
+// Bedrock: seleção local sem enviar arquivos ao servidor.
+const bedrockInput=$('#bedrock-file');
+if(bedrockInput)bedrockInput.addEventListener('change',()=>{const host=$('#bedrock-files'),files=Array.from(bedrockInput.files||[]);if(!files.length){host.innerHTML='<div class="empty">Nenhum arquivo selecionado.</div>';return}const invalid=files.filter(f=>!(/\\.(mcpack|mcaddon|zip)$/i.test(f.name)));if(invalid.length)toast('Alguns arquivos não parecem ser add-ons Bedrock.');const valid=files.filter(f=>/\\.(mcpack|mcaddon)$/i.test(f.name));host.innerHTML=valid.length?valid.map(f=>'<div class="bedrock-file"><span>'+esc(f.name)+'<small>'+(f.size/1048576).toFixed(2)+' MB · arquivo local</small></span><span>✓</span></div>').join(''):'<div class="empty">Selecione arquivos .mcpack ou .mcaddon válidos.</div>';});
