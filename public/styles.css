@@ -18,3 +18,5 @@
 
 /* Bedrock add-on workspace v1.2.0 */
 .bedrock-card{background:var(--panel);border:1px solid var(--line);border-radius:17px;padding:16px;margin:12px 0}.bedrock-card p,.bedrock-card li{color:var(--muted);font-size:13px;line-height:1.55}.bedrock-card ul{padding-left:20px}.bedrock-link{display:inline-flex;margin-top:8px;padding:12px 15px;border-radius:12px;background:#17432d;color:var(--lime);font-weight:800;text-decoration:none}.file-picker{display:flex;flex-direction:column;gap:9px;margin-top:12px;padding:13px;border:1px dashed #34734f;border-radius:12px;color:var(--lime);font-weight:700}.file-picker input{padding:9px;font-weight:400}.bedrock-file{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.bedrock-file small{display:block;color:var(--muted);font-size:11px}.tab{font-size:9px}
+
+.bedrock-open{display:inline-flex;padding:7px 10px;border:1px solid #34734f;border-radius:9px;background:#153b27;color:var(--lime);text-decoration:none;font-weight:750}.bedrock-card .searchbar{margin:12px 0}.bedrock-card .result{margin-top:8px}
