@@ -96,3 +96,23 @@ renderLibrary();syncExtraButtons();
 // Bedrock: seleção local sem enviar arquivos ao servidor.
 const bedrockInput=$('#bedrock-file');
 if(bedrockInput)bedrockInput.addEventListener('change',()=>{const host=$('#bedrock-files'),files=Array.from(bedrockInput.files||[]);if(!files.length){host.innerHTML='<div class="empty">Nenhum arquivo selecionado.</div>';return}const invalid=files.filter(f=>!(/\\.(mcpack|mcaddon|zip)$/i.test(f.name)));if(invalid.length)toast('Alguns arquivos não parecem ser add-ons Bedrock.');const valid=files.filter(f=>/\\.(mcpack|mcaddon)$/i.test(f.name));host.innerHTML=valid.length?valid.map(f=>'<div class="bedrock-file"><span>'+esc(f.name)+'<small>'+(f.size/1048576).toFixed(2)+' MB · arquivo local</small></span><span>✓</span></div>').join(''):'<div class="empty">Selecione arquivos .mcpack ou .mcaddon válidos.</div>';});
+
+
+// v1.3.0 — catálogo Bedrock separado do catálogo Java.
+let bedrockPage=0,bedrockRequest=0,bedrockResults=[];
+async function searchBedrock(page=0){
+ const req=++bedrockRequest,query=$('#bedrock-query').value.trim();bedrockPage=Math.max(0,page);
+ $('#bedrock-results').innerHTML='<div class="empty">Pesquisando add-ons Bedrock…</div>';
+ try{
+  const params=new URLSearchParams({limit:'20',page:String(bedrockPage)});if(query)params.set('query',query);
+  const response=await fetch('/api/bedrock/search?'+params),data=await response.json();
+  if(req!==bedrockRequest)return;if(!response.ok)throw Error(data.error||'Falha na pesquisa Bedrock.');
+  bedrockResults=data.results||[];
+  if(!bedrockResults.length){$('#bedrock-results').innerHTML='<div class="empty">Nenhum add-on encontrado nesta página.</div>';$('#bedrock-pagination').innerHTML='';return}
+  $('#bedrock-results').innerHTML=bedrockResults.map(item=>'<article class="result"><img src="'+esc(item.icon_url||'')+'" alt=""><div><h4>'+esc(item.title)+'</h4><p>'+esc(item.description||'Sem descrição.')+'</p></div><div class="result-foot"><span>'+Number(item.downloads||0).toLocaleString('pt-BR')+' downloads</span><a class="bedrock-open" href="'+esc(item.url||'https://www.curseforge.com/minecraft-bedrock/addons')+'" target="_blank" rel="noopener">Ver add-on ↗</a></div></article>').join('');
+  $('#bedrock-pagination').innerHTML='<button id="bedrock-prev" '+(bedrockPage===0?'disabled':'')+'>‹ Anterior</button><span>Página '+(bedrockPage+1)+'</span><button id="bedrock-next" '+(bedrockResults.length<20?'disabled':'')+'>Próxima ›</button>';
+  $('#bedrock-prev').onclick=()=>searchBedrock(bedrockPage-1);$('#bedrock-next').onclick=()=>searchBedrock(bedrockPage+1);
+ }catch(error){if(req!==bedrockRequest)return;$('#bedrock-results').innerHTML='<div class="empty">'+esc(error.message)+'</div>';$('#bedrock-pagination').innerHTML=''}
+}
+$('#bedrock-search-btn').onclick=()=>searchBedrock(0);
+$('#bedrock-query').onkeydown=e=>{if(e.key==='Enter')searchBedrock(0)};
