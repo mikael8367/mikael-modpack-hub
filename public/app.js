@@ -116,3 +116,5 @@ async function searchBedrock(page=0){
 }
 $('#bedrock-search-btn').onclick=()=>searchBedrock(0);
 $('#bedrock-query').onkeydown=e=>{if(e.key==='Enter')searchBedrock(0)};
+
+let bedrockLoaded=false;const previousGoForBedrock=go;go=function(id){previousGoForBedrock(id);if(id==='bedrock'&&!bedrockLoaded){bedrockLoaded=true;searchBedrock(0)}};
