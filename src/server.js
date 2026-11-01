@@ -93,6 +93,22 @@ app.get('/api/curseforge/mod/:id/files',async(req,res)=>{
     const d=await getJson(url,h);res.json({total:d.pagination?.totalCount||0,files:(d.data||[]).map(f=>({id:f.id,displayName:f.displayName,fileName:f.fileName,gameVersions:f.gameVersions||[],downloadUrl:f.downloadUrl,fileLength:f.fileLength}))});
   }catch(e){res.status(e.status||502).json({error:'Falha ao consultar arquivos.'});}
 });
+
+app.get('/api/bedrock/search',async(req,res)=>{
+  const headers=cfHeaders();if(!headers)return res.status(503).json({error:'Configure CURSEFORGE_API_KEY nos Secrets do Render para pesquisar add-ons.'});
+  try{
+    const q=clean(req.query.query,100),page=Math.max(0,Math.min(10000,Number.parseInt(req.query.page,10)||0)),size=limit(req.query.limit,20);
+    const categories=await getJson('https://api.curseforge.com/v1/categories?gameId=432&classesOnly=true',headers);
+    const classes=categories.data||[];
+    const bedrockClass=classes.find(c=>/bedrock|addon/i.test(String(c.name)+' '+String(c.slug)));
+    if(!bedrockClass)throw new Error('A categoria Bedrock não foi identificada no catálogo CurseForge.');
+    const url=new URL('https://api.curseforge.com/v1/mods/search');url.searchParams.set('gameId','432');url.searchParams.set('classId',String(bedrockClass.id));url.searchParams.set('pageSize',String(size));url.searchParams.set('index',String(page*size));
+    if(q)url.searchParams.set('searchFilter',q);else{url.searchParams.set('sortField','6');url.searchParams.set('sortOrder','desc');}
+    const d=await getJson(url,headers);
+    res.json({provider:'curseforge-bedrock',total:d.pagination?.totalCount||0,results:(d.data||[]).map(m=>({id:m.id,title:m.name,description:m.summary,downloads:m.downloadCount,icon_url:m.logo?.url,url:m.links?.websiteUrl||('https://www.curseforge.com/minecraft-bedrock/addons/'+m.slug)}))});
+  }catch(e){console.error('Bedrock search:',e.message);res.status(e.status||502).json({error:e.message||'Falha ao pesquisar add-ons Bedrock.'});}
+});
+
 app.post('/api/packs/validate',(req,res)=>{
   const b=req.body||{},name=clean(b.name,80),version=clean(b.minecraft_version,20),loader=clean(b.loader,20).toLowerCase();
   if(!name||!version||!['vanilla','fabric','forge','neoforge','quilt'].includes(loader))return res.status(400).json({valid:false,error:'Informe nome, versão Minecraft e loader válido.'});
