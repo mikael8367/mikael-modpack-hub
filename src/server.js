@@ -42,10 +42,10 @@ app.use('/api',(req,res,next)=>{
 });
 app.get('/api/modrinth/search',async(req,res)=>{
   try{
-    const q=clean(req.query.query,100);if(!q)return res.status(400).json({error:'Informe query.'});
-    const url=new URL('https://api.modrinth.com/v2/search');url.searchParams.set('query',q);url.searchParams.set('limit',String(limit(req.query.limit)));
+    const q=clean(req.query.query,100);
+    const url=new URL('https://api.modrinth.com/v2/search');url.searchParams.set('query',q);url.searchParams.set('index','downloads');url.searchParams.set('limit',String(limit(req.query.limit)));
     const gv=clean(req.query.game_version,20),loader=clean(req.query.loader,20).toLowerCase(),facets=[];
-    if(gv)facets.push(['versions:'+gv]);if(['fabric','forge','neoforge','quilt'].includes(loader))facets.push(['categories:'+loader]);
+    facets.push(['project_type:mod']);if(gv)facets.push(['versions:'+gv]);if(['fabric','forge','neoforge','quilt'].includes(loader))facets.push(['categories:'+loader]);
     if(facets.length)url.searchParams.set('facets',JSON.stringify(facets));
     const d=await getJson(url,mrHeaders);
     res.json({provider:'modrinth',total:d.total_hits,results:(d.hits||[]).map(p=>({id:p.project_id,slug:p.slug,title:p.title,description:p.description,author:p.author,downloads:p.downloads,icon_url:p.icon_url,versions:p.versions}))});
@@ -65,8 +65,8 @@ app.get('/api/modrinth/project/:id/versions',async(req,res)=>{
 });
 app.get('/api/curseforge/search',async(req,res)=>{
   const headers=cfHeaders();if(!headers)return res.status(503).json({error:'Configure CURSEFORGE_API_KEY nos Secrets do Render.'});
-  try{const q=clean(req.query.query,100);if(!q)return res.status(400).json({error:'Informe query.'});
-    const url=new URL('https://api.curseforge.com/v1/mods/search');url.searchParams.set('gameId','432');url.searchParams.set('searchFilter',q);url.searchParams.set('pageSize',String(limit(req.query.limit)));
+  try{const q=clean(req.query.query,100);
+    const url=new URL('https://api.curseforge.com/v1/mods/search');url.searchParams.set('gameId','432');if(q)url.searchParams.set('searchFilter',q);else{url.searchParams.set('sortField','6');url.searchParams.set('sortOrder','desc');}url.searchParams.set('pageSize',String(limit(req.query.limit)));
     const gv=clean(req.query.game_version,20);if(gv)url.searchParams.set('gameVersion',gv);
     const d=await getJson(url,headers);res.json({provider:'curseforge',total:d.pagination?.totalCount||0,results:(d.data||[]).map(m=>({id:m.id,name:m.name,slug:m.slug,summary:m.summary,downloads:m.downloadCount,logo:m.logo?.url,websiteUrl:m.links?.websiteUrl}))});
   }catch(e){res.status(e.status||502).json({error:'Falha ao consultar CurseForge.'});}
