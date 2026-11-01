@@ -67,8 +67,9 @@ app.get('/api/modrinth/project/:id/versions',async(req,res)=>{
 app.get('/api/curseforge/search',async(req,res)=>{
   const headers=cfHeaders();if(!headers)return res.status(503).json({error:'Configure CURSEFORGE_API_KEY nos Secrets do Render.'});
   try{const q=clean(req.query.query,100);
-    const url=new URL('https://api.curseforge.com/v1/mods/search');url.searchParams.set('gameId','432');if(q)url.searchParams.set('searchFilter',q);else{url.searchParams.set('sortField','6');url.searchParams.set('sortOrder','desc');}url.searchParams.set('pageSize',String(limit(req.query.limit,50)));url.searchParams.set('index',String(Math.max(0,Math.min(100000,Number.parseInt(req.query.page,10)||0))*limit(req.query.limit,50)));url.searchParams.set('index',String(Math.max(0,Math.min(100000,Number.parseInt(req.query.page,10)||0))*limit(req.query.limit)));
+    const url=new URL('https://api.curseforge.com/v1/mods/search');url.searchParams.set('gameId','432');if(q)url.searchParams.set('searchFilter',q);else{url.searchParams.set('sortField','6');url.searchParams.set('sortOrder','desc');}url.searchParams.set('pageSize',String(limit(req.query.limit,50)));url.searchParams.set('index',String(Math.max(0,Math.min(100000,Number.parseInt(req.query.page,10)||0))*limit(req.query.limit,50)));
     const gv=clean(req.query.game_version,20);if(gv)url.searchParams.set('gameVersion',gv);
+    const loader=clean(req.query.loader,20).toLowerCase(),loaderType={forge:1,fabric:4,quilt:5,neoforge:6}[loader];if(loaderType)url.searchParams.set('modLoaderType',String(loaderType));
     const d=await getJson(url,headers);res.json({provider:'curseforge',total:d.pagination?.totalCount||0,results:(d.data||[]).map(m=>({id:m.id,name:m.name,slug:m.slug,summary:m.summary,downloads:m.downloadCount,logo:m.logo?.url,websiteUrl:m.links?.websiteUrl}))});
   }catch(e){res.status(e.status||502).json({error:'Falha ao consultar CurseForge.'});}
 });
@@ -82,6 +83,7 @@ app.get('/api/curseforge/mod/:id/files',async(req,res)=>{
   try{const id=Number(req.params.id);if(!Number.isSafeInteger(id)||id<1)return res.status(400).json({error:'ID inválido.'});
     const url=new URL('https://api.curseforge.com/v1/mods/'+id+'/files');url.searchParams.set('pageSize',String(limit(req.query.limit,50)));url.searchParams.set('index',String(Math.max(0,Math.min(100000,Number.parseInt(req.query.page,10)||0))*limit(req.query.limit,50)));
     const gv=clean(req.query.game_version,20);if(gv)url.searchParams.set('gameVersion',gv);
+    const loader=clean(req.query.loader,20).toLowerCase(),loaderType={forge:1,fabric:4,quilt:5,neoforge:6}[loader];if(loaderType)url.searchParams.set('modLoaderType',String(loaderType));
     const d=await getJson(url,h);res.json({total:d.pagination?.totalCount||0,files:(d.data||[]).map(f=>({id:f.id,displayName:f.displayName,fileName:f.fileName,gameVersions:f.gameVersions||[],downloadUrl:f.downloadUrl,fileLength:f.fileLength}))});
   }catch(e){res.status(e.status||502).json({error:'Falha ao consultar arquivos.'});}
 });
@@ -123,7 +125,7 @@ app.post('/api/packs/create',async(req,res)=>{
   if(depth>8||seen.has('cf:'+modId+':'+fileId))return;if(!cf)throw new Error('CurseForge precisa da chave API configurada no Render.');seen.add('cf:'+modId+':'+fileId);
   const data=await getJson('https://api.curseforge.com/v1/mods/'+modId+'/files/'+fileId,cf);const f=data.data;
   if(!(f.gameVersions||[]).includes(gameVersion))throw new Error('Versão Minecraft incompatível: '+(f.displayName||f.fileName));
-  if(cfLoader&&!((f.gameVersions||[]).some(x=>x.toLowerCase()===loader)))throw new Error('Não foi possível confirmar o loader deste arquivo CurseForge.');
+
   let url=f.downloadUrl;if(!url){const d=await getJson('https://api.curseforge.com/v1/mods/'+modId+'/files/'+fileId+'/download-url',cf);url=d.data}
   addFile({fileName:f.fileName,downloadUrl:url,hashes:{sha1:(f.hashes||[]).find(x=>x.algo===1)?.value},fileLength:f.fileLength},'curseforge',modId);
   for(const dep of f.dependencies||[]){if(dep.relationType!==3)continue;const q=new URL('https://api.curseforge.com/v1/mods/'+dep.modId+'/files');q.searchParams.set('gameVersion',gameVersion);q.searchParams.set('pageSize','50');if(cfLoader)q.searchParams.set('modLoaderType',String(cfLoader));const list=await getJson(q,cf);const match=(list.data||[]).find(x=>(x.gameVersions||[]).includes(gameVersion));if(match){dependencyCount++;await resolveCf(dep.modId,match.id,depth+1)}else warnings.push('Dependência CurseForge não encontrada: '+dep.modId)}
