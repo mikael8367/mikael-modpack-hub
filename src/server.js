@@ -78,7 +78,7 @@ app.get('/api/curseforge/mod/:id',async(req,res)=>{
   try{const id=Number(req.params.id);if(!Number.isSafeInteger(id)||id<1)return res.status(400).json({error:'ID inválido.'});const d=await getJson('https://api.curseforge.com/v1/mods/'+id,h);res.json({mod:d.data});}
   catch(e){res.status(e.status||502).json({error:'Falha ao consultar mod.'});}
 });
-app.get('/api/curseforge/mod/:id/files',async(req,res)=>{
+app.get('/api/curseforge/mod/:id/files/:fileId/download-url',async(req,res)=>{\n  const h=cfHeaders();if(!h)return res.status(503).json({error:'Configure CURSEFORGE_API_KEY.'});\n  try{const id=Number(req.params.id),fileId=Number(req.params.fileId);if(!Number.isSafeInteger(id)||id<1||!Number.isSafeInteger(fileId)||fileId<1)return res.status(400).json({error:'ID inválido.'});\n    const d=await getJson('https://api.curseforge.com/v1/mods/'+id+'/files/'+fileId+'/download-url',h);const url=new URL(d.data);if(url.protocol!=='https:')return res.status(502).json({error:'O provedor retornou um link inseguro.'});res.json({url:url.href});\n  }catch(e){res.status(e.status||502).json({error:'Não foi possível obter o link de download.'});}\n});\napp.get('/api/curseforge/mod/:id/files',async(req,res)=>{
   const h=cfHeaders();if(!h)return res.status(503).json({error:'Configure CURSEFORGE_API_KEY.'});
   try{const id=Number(req.params.id);if(!Number.isSafeInteger(id)||id<1)return res.status(400).json({error:'ID inválido.'});
     const url=new URL('https://api.curseforge.com/v1/mods/'+id+'/files');url.searchParams.set('pageSize',String(limit(req.query.limit,50)));url.searchParams.set('index',String(Math.max(0,Math.min(100000,Number.parseInt(req.query.page,10)||0))*limit(req.query.limit,50)));
