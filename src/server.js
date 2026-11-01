@@ -97,13 +97,13 @@ app.post('/api/packs/validate',(req,res)=>{
 
 app.post('/api/packs/create',async(req,res)=>{
  const body=req.body||{},name=clean(body.name,80),gameVersion=clean(body.minecraft_version,20),loader=clean(body.loader,20).toLowerCase(),projects=body.projects;
- if(!name||!/^\\d+\\.\\d+(\\.\\d+)?$/.test(gameVersion)||!['vanilla','fabric','forge','neoforge','quilt'].includes(loader))return res.status(400).json({error:'Nome, versão Minecraft ou modloader inválido.'});
+ if(!name||!/^\d+\.\d+(\.\d+)?$/.test(gameVersion)||!['vanilla','fabric','forge','neoforge','quilt'].includes(loader))return res.status(400).json({error:'Nome, versão Minecraft ou modloader inválido.'});
  if(!Array.isArray(projects)||projects.length<1||projects.length>100)return res.status(400).json({error:'Selecione de 1 a 100 mods.'});
  if(projects.some(p=>!['modrinth','curseforge'].includes(p?.provider)||!clean(String(p?.id||''),100)||!clean(String(p?.version_id||''),100)))return res.status(400).json({error:'Cada mod precisa ter uma versão selecionada.'});
  const cf=cfHeaders(),seen=new Set(),files=[],warnings=[];let dependencyCount=0;
  const addFile=(file,provider,id)=>{
   const fileName=clean(file.filename||file.fileName||file.name||('mod-'+id+'.jar'),180).replace(/[\\/\\\\]/g,'_');
-  const url=file.url||file.downloadUrl;if(!url||!/^https:\\/\\//i.test(url))throw new Error('O provedor não forneceu um link de download para '+fileName);
+  const url=file.url||file.downloadUrl;let safeUrl;try{safeUrl=new URL(url)}catch{}if(!safeUrl||safeUrl.protocol!=='https:')throw new Error('O provedor não forneceu um link HTTPS de download para '+fileName);
   const hashes=file.hashes||{};const fileHashes={};if(hashes.sha1||hashes.SHA1)fileHashes.sha1=hashes.sha1||hashes.SHA1;if(hashes.sha512||hashes.SHA512)fileHashes.sha512=hashes.sha512||hashes.SHA512;
   const existing=files.find(x=>x.path==='mods/'+fileName);if(existing)return;
   files.push({path:'mods/'+fileName,hashes:fileHashes,downloads:[url],fileSize:Number(file.size||file.fileLength||0),env:{client:'required',server:'required'}});
@@ -132,7 +132,7 @@ app.post('/api/packs/create',async(req,res)=>{
   for(const p of projects){if(p.provider==='modrinth')await resolveMr(clean(String(p.version_id),100));else await resolveCf(clean(String(p.id),30),clean(String(p.version_id),30))}
   if(!files.length)throw new Error('Nenhum arquivo compatível foi resolvido.');
   const index={formatVersion:1,game:'minecraft',versionId:crypto.randomUUID(),name,summary:'Criado com Mikael Modpack Hub',files,dependencies:{minecraft:gameVersion,...(loader==='vanilla'?{}:{[loader]: '*'} )}};
-  res.setHeader('Content-Type','application/x-modrinth-modpack+zip');res.setHeader('Content-Disposition',"attachment; filename*=UTF-8''"+encodeURIComponent(name.replace(/[^\\p{L}\\p{N} _-]/gu,'').slice(0,60)+'.mrpack'));
+  res.setHeader('Content-Type','application/x-modrinth-modpack+zip');res.setHeader('Content-Disposition',"attachment; filename*=UTF-8''"+encodeURIComponent(name.replace(/[^\p{L}\p{N} _-]/gu,'').slice(0,60)+'.mrpack'));
   const zip=archiver('zip',{zlib:{level:6}});zip.on('error',err=>{console.error('Pack archive:',err.message);if(!res.headersSent)res.status(500).end();else res.destroy(err)});zip.pipe(res);zip.append(JSON.stringify(index,null,2),{name:'modrinth.index.json'});zip.append('Este modpack contém links para os arquivos dos mods. Instale usando um launcher compatível com Modrinth (.mrpack).'+(warnings.length?'\\nAvisos de dependências:\\n'+warnings.join('\\n'):'') ,{name:'README.txt'});await zip.finalize();
  }catch(e){console.error('Pack create:',e.message);if(!res.headersSent)res.status(e.status||400).json({error:e.message||'Falha ao criar modpack.'});else res.destroy(e)}
 });
