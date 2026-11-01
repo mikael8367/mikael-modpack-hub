@@ -17,12 +17,12 @@ async function search(popular=false,page=0){
   results=d.results||[];
   if(!results.length){currentPage=previousPage;$('#results').innerHTML='<div class="empty">Não há mais resultados. Você chegou ao fim dos resultados disponíveis deste catálogo.</div>';renderPagination();return}
   $('#results').innerHTML=results.map((m,i)=>'<article class="result" data-open="'+i+'" role="button" tabindex="0"><img src="'+esc(m.icon_url||m.logo||'')+'" alt=""><div><h4>'+esc(m.title||m.name)+'</h4><p>'+esc(m.description||m.summary||'')+'</p></div><div class="result-foot"><span>'+Number(m.downloads||0).toLocaleString('pt-BR')+' downloads</span><button data-open="'+i+'" type="button">Escolher versão</button></div></article>').join('');
-  document.querySelectorAll('[data-open]').forEach(b=>{const open=()=>openVersionPicker(results[Number(b.dataset.open)],provider);b.onclick=e=>{e.stopPropagation();open()};if(b.tagName==='ARTICLE')b.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open()}}});
+  document.querySelectorAll('[data-open]').forEach(b=>{const open=()=>openVersionPicker(results[Number(b.dataset.open)],provider,'download');b.onclick=e=>{e.stopPropagation();open()};if(b.tagName==='ARTICLE')b.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open()}}});
   renderPagination();
  }catch(e){if(requestId!==searchRequest)return;currentPage=previousPage;$('#results').innerHTML='<div class="empty">'+esc(e.message)+'</div>';renderPagination()}
 }
 function renderPagination(){const el=$('#pagination');if(!el)return;el.innerHTML='<button id="page-prev" '+(currentPage===0?'disabled':'')+'>‹ Anterior</button><span>Página '+(currentPage+1)+'</span><button id="page-next">Próxima ›</button>';$('#page-prev').onclick=()=>search(false,currentPage-1);$('#page-next').onclick=()=>search(false,currentPage+1)}
-let modalProject=null,modalProvider=null,availableFiles=[];
+let modalProject=null,modalProvider=null,modalMode='pack',availableFiles=[];
 function fillOptions(select,values,firstLabel){select.innerHTML='<option value="">'+firstLabel+'</option>'+values.map(v=>'<option value="'+esc(v)+'">'+esc(v)+'</option>').join('')}
 function refreshFileOptions(){
  const gv=$('#modal-game-version').value,loader=$('#modal-loader').value;
@@ -31,10 +31,10 @@ function refreshFileOptions(){
  $('#modal-add').disabled=true;
  $('#modal-hint').textContent=list.length?list.length+' versão(ões) compatível(is) encontrada(s).': 'Nenhuma versão encontrada com esses filtros.';
 }
-async function openVersionPicker(project,provider){
- modalProject=project;modalProvider=provider;availableFiles=[];
+async function openVersionPicker(project,provider,mode='pack'){
+ modalProject=project;modalProvider=provider;modalMode=mode;availableFiles=[];
  $('#version-project').textContent=project.title||project.name;
- $('#version-modal').hidden=false;$('#modal-add').disabled=true;$('#modal-hint').textContent='Carregando versões disponíveis…';
+ $('#version-modal').hidden=false;$('#modal-add').disabled=true;$('#modal-add').textContent=mode==='download'?'Baixar mod':'Adicionar ao modpack';$('#modal-hint').textContent='Carregando versões disponíveis…';
  fillOptions($('#modal-game-version'),[],'Todas as versões');fillOptions($('#modal-loader'),[],'Todos os loaders');fillOptions($('#modal-file'),[],'Carregando…');
  try{
   let r,d;
@@ -55,7 +55,7 @@ async function openVersionPicker(project,provider){
 $('#modal-game-version').onchange=refreshFileOptions;$('#modal-loader').onchange=refreshFileOptions;$('#modal-file').onchange=()=>$('#modal-add').disabled=!$('#modal-file').value;
 $('#modal-close').onclick=()=>$('#version-modal').hidden=true;
 $('#version-modal').onclick=e=>{if(e.target===$('#version-modal'))$('#version-modal').hidden=true};
-$('#modal-add').onclick=()=>{const file=availableFiles.find(v=>String(v.id)===$('#modal-file').value);if(!file)return;const item={provider:modalProvider,id:String(modalProject.id),name:modalProject.title||modalProject.name,version_id:String(file.id),version_name:file.name||file.version_number||file.displayName||file.fileName,game_version:$('#modal-game-version').value||((file.game_versions||file.gameVersions||[]).find(x=>/^\d+\.\d+(\.\d+)?$/.test(x))||''),loader:$('#modal-loader').value||((file.loaders||file.gameVersions||[]).find(x=>['fabric','forge','neoforge','quilt'].includes(String(x).toLowerCase()))||'')};if(selected.some(x=>x.provider===item.provider&&x.id===item.id&&x.version_id===item.version_id))return toast('Essa versão já foi adicionada.');selected.push(item);draw();$('#version-modal').hidden=true;drawPackSelection();toast('Versão adicionada ao modpack.')};
+$('#modal-add').onclick=async()=>{const file=availableFiles.find(v=>String(v.id)===$('#modal-file').value);if(!file)return;if(modalMode==='download'){const button=$('#modal-add');button.disabled=true;button.textContent='Preparando download…';try{let url=modalProvider==='modrinth'?(file.raw?.files||[]).find(x=>x.primary)?.url||(file.raw?.files||[])[0]?.url:file.raw?.downloadUrl;if(!url&&modalProvider==='curseforge'){const r=await fetch('/api/curseforge/mod/'+encodeURIComponent(modalProject.id)+'/files/'+encodeURIComponent(file.id)+'/download-url');const d=await r.json();if(!r.ok)throw Error(d.error||'Não foi possível obter o link de download.');url=d.url;}const parsed=new URL(url);if(parsed.protocol!=='https:')throw Error('Link de download inseguro ou inválido.');const a=document.createElement('a');a.href=parsed.href;a.target='_blank';a.rel='noopener';a.download=file.raw?.filename||file.raw?.fileName||'';document.body.appendChild(a);a.click();a.remove();$('#version-modal').hidden=true;toast('Download iniciado. Confira os downloads do navegador.');}catch(e){toast(e.message||'Falha ao iniciar download.');button.disabled=false;button.textContent='Baixar mod';}return;}const item={provider:modalProvider,id:String(modalProject.id),name:modalProject.title||modalProject.name,version_id:String(file.id),version_name:file.name||file.version_number||file.displayName||file.fileName,game_version:$('#modal-game-version').value||((file.game_versions||file.gameVersions||[]).find(x=>/^\d+\.\d+(\.\d+)?$/.test(x))||''),loader:$('#modal-loader').value||((file.loaders||file.gameVersions||[]).find(x=>['fabric','forge','neoforge','quilt'].includes(String(x).toLowerCase()))||'')};if(selected.some(x=>x.provider===item.provider&&x.id===item.id&&x.version_id===item.version_id))return toast('Essa versão já foi adicionada.');selected.push(item);draw();$('#version-modal').hidden=true;drawPackSelection();toast('Versão adicionada ao modpack.')};
 
 function add(m,provider){openVersionPicker(m,provider)}
 function draw(){const el=$('#selected');if(!el)return;if(!selected.length){el.className='selected empty';el.textContent='Nenhum mod selecionado.';drawPackSelection();return}el.className='selected';el.innerHTML=selected.map((p,i)=>'<div class="selected-item"><span>'+esc(p.name)+' <small>('+p.provider+' · '+esc(p.version_name||'versão não definida')+')</small></span><button data-remove="'+i+'">Remover</button></div>').join('');document.querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>{selected.splice(Number(b.dataset.remove),1);draw()});drawPackSelection()}
