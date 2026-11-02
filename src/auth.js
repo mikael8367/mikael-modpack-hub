@@ -25,10 +25,17 @@ function database() {
     CREATE TABLE IF NOT EXISTS hub_users (
       id BIGSERIAL PRIMARY KEY,
       display_name VARCHAR(60) NOT NULL,
+      username VARCHAR(20),
       email VARCHAR(254) NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS username VARCHAR(20);
+    UPDATE hub_users
+      SET username = COALESCE(NULLIF(LOWER(REGEXP_REPLACE(display_name, '[^a-zA-Z0-9_]', '', 'g')), ''), 'usuario') || id::text
+      WHERE username IS NULL OR username = '';
+    ALTER TABLE hub_users ALTER COLUMN username SET NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS hub_users_username_unique ON hub_users (LOWER(username));
     CREATE TABLE IF NOT EXISTS hub_sessions (
       token_hash CHAR(64) PRIMARY KEY,
       user_id BIGINT NOT NULL REFERENCES hub_users(id) ON DELETE CASCADE,
@@ -83,7 +90,7 @@ function validOrigin(req) {
   } catch { return false; }
 }
 function publicUser(row) {
-  return { id: String(row.id), name: row.display_name, email: row.email, createdAt: row.created_at };
+  return { id: String(row.id), name: row.display_name, username: row.username, email: row.email, createdAt: row.created_at };
 }
 
 export function createAuthRouter() {
@@ -114,24 +121,27 @@ export function createAuthRouter() {
 
   router.post('/register', registerLimit, async (req, res) => {
     try {
-      const name = String(req.body?.name || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+      const name = String(req.body?.name || '').trim();
+      const username = name.toLowerCase();
       const email = String(req.body?.email || '').trim().toLowerCase();
       const password = String(req.body?.password || '');
-      if (name.length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254)
-        return res.status(400).json({ error: 'Informe nome e e-mail válidos.' });
+      if (!/^[a-z0-9_]{3,20}$/.test(username))
+        return res.status(400).json({ error: 'O nome de usuário deve ter de 3 a 20 caracteres: somente letras sem acento, números e _. Não use espaços.' });
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254)
+        return res.status(400).json({ error: 'Informe um e-mail válido.' });
       if (password.length < 10 || password.length > 72)
         return res.status(400).json({ error: 'A senha deve ter entre 10 e 72 caracteres.' });
       const passwordHash = await bcrypt.hash(password, 12);
       const result = await dbQuery(
-        'INSERT INTO hub_users(display_name,email,password_hash) VALUES($1,$2,$3) RETURNING id,display_name,email,created_at',
-        [name, email, passwordHash]
+        'INSERT INTO hub_users(display_name,username,email,password_hash) VALUES($1,$2,$3,$4) RETURNING id,display_name,username,email,created_at',
+        [username, username, email, passwordHash]
       );
       const token = crypto.randomBytes(32).toString('hex');
       await dbQuery("INSERT INTO hub_sessions(token_hash,user_id,expires_at) VALUES($1,$2,NOW()+INTERVAL '14 days')", [hashToken(token), result.rows[0].id]);
       setSessionCookie(res, token);
       res.status(201).json({ user: publicUser(result.rows[0]) });
     } catch (error) {
-      if (error.code === '23505') return res.status(409).json({ error: 'Não foi possível criar a conta. Confira se o e-mail já está cadastrado.' });
+      if (error.code === '23505') return res.status(409).json({ error: 'Esse nome de usuário ou e-mail já está em uso. Escolha outro.' });
       console.error('Auth register:', error.message);
       res.status(503).json({ error: 'Falha ao criar a conta. Verifique a conexão do banco.' });
     }
