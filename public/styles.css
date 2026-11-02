@@ -63,3 +63,8 @@
 .crash-result details{margin-top:10px}
 .crash-result summary{cursor:pointer;color:var(--lime);font-size:12px}
 .crash-result pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;font-size:11px;color:var(--muted);background:var(--panel);padding:10px;border-radius:10px}
+
+/* Navegação inferior rolável em telas estreitas */
+.bottom{justify-content:flex-start;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}
+.bottom::-webkit-scrollbar{display:none}
+.bottom .tab{flex:0 0 68px}
