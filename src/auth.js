@@ -94,6 +94,7 @@ export function createAuthRouter() {
   async function currentUser(req) {
     const token = readCookie(req);
     if (!/^[a-f0-9]{64}$/.test(token)) return null;
+    if (schemaPromise) await schemaPromise;
     const result = await database().query(
       'SELECT u.id,u.display_name,u.email,u.created_at FROM hub_sessions s JOIN hub_users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>NOW()',
       [hashToken(token)]
