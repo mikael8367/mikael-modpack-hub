@@ -1,5 +1,32 @@
 const $=s=>document.querySelector(s);let selected=[],results=[],currentPage=0,searchRequest=0;const PAGE_SIZE=20;let searchTotal=0;
 function toast(s){const e=$('#toast');e.textContent=s;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),2500)}
+
+// Tutorial de primeira visita: fica salvo apenas neste navegador/aparelho.
+const tutorialSteps=[
+ {icon:'⌕',title:'Pesquisar e baixar mods',description:'Aqui você encontra mods nos catálogos Modrinth e CurseForge. Digite o nome, escolha a versão do Minecraft e o loader para filtrar. Toque em “Escolher versão” para selecionar e baixar.',tip:'Dica: confira sempre se o mod é para sua versão do Minecraft e para Forge, Fabric ou outro loader compatível.'},
+ {icon:'＋',title:'Criar seu modpack',description:'Abra Criar, informe um nome, a versão do Minecraft e o modloader. Depois pesquise os mods, escolha uma versão compatível e adicione ao pacote. Quando terminar, toque em “Baixar modpack”.',tip:'O arquivo gerado é .mrpack. A quantidade de mods não garante compatibilidade: confira dependências e versões.'},
+ {icon:'◇',title:'Conteúdo Bedrock',description:'Esta área é exclusiva para Minecraft Bedrock. Você pode pesquisar add-ons e selecionar arquivos .mcpack ou .mcaddon já salvos no celular.',tip:'Arquivos .jar de Java e loaders Forge/Fabric não funcionam no Bedrock. Faça cópia do mundo antes de testar add-ons.'},
+ {icon:'♧',title:'Comunidade',description:'Veja modpacks publicados por outras pessoas. Para publicar o seu, entre ou crie uma conta, preencha os dados e escolha uma imagem de capa. Você também pode editar suas publicações.',tip:'Publique somente imagens e materiais que você tem autorização para compartilhar.'},
+ {icon:'⌕',title:'Análise de Crash',description:'Se o Minecraft fechar ou apresentar erro, abra Crash e selecione arquivos .txt, .log ou PDF. O Hub procura pistas como falta de memória, mods incompatíveis e bibliotecas ausentes.',tip:'A análise é automática e pode errar. Ela ajuda a encontrar pistas; não garante identificar toda causa.'},
+ {icon:'▤',title:'Biblioteca e Ajustes',description:'Biblioteca guarda seus modpacks neste aparelho e permite importar ou exportar listas. Em Ajustes você pode criar conta online para usar os recursos de conta, alterar seu nome e sair.',tip:'Sem conta, a biblioteca fica somente neste aparelho. Guarde uma exportação para não perder seus projetos.'}
+];
+let tutorialIndex=0;
+function renderTutorial(){
+ const step=tutorialSteps[tutorialIndex];if(!step)return;
+ $('#tutorial-icon').textContent=step.icon;$('#tutorial-title').textContent=step.title;
+ $('#tutorial-description').textContent=step.description;$('#tutorial-tip').textContent=step.tip;
+ $('#tutorial-step-count').textContent='Etapa '+(tutorialIndex+1)+' de '+tutorialSteps.length;
+ $('#tutorial-progress-fill').style.width=((tutorialIndex+1)/tutorialSteps.length*100)+'%';
+ $('#tutorial-back').disabled=tutorialIndex===0;
+ $('#tutorial-next').textContent=tutorialIndex===tutorialSteps.length-1?'Concluir':'Próximo';
+}
+function openTutorial(){tutorialIndex=0;renderTutorial();$('#welcome-tutorial').hidden=false;document.body.classList.add('tutorial-open')}
+function closeTutorial(){localStorage.setItem('modpack-hub-tutorial-v1','done');$('#welcome-tutorial').hidden=true;document.body.classList.remove('tutorial-open')}
+$('#tutorial-next').onclick=()=>{if(tutorialIndex<tutorialSteps.length-1){tutorialIndex++;renderTutorial()}else closeTutorial()};
+$('#tutorial-back').onclick=()=>{if(tutorialIndex>0){tutorialIndex--;renderTutorial()}};
+$('#tutorial-skip').onclick=closeTutorial;
+$('#tutorial-replay').onclick=openTutorial;
+if(!localStorage.getItem('modpack-hub-tutorial-v1'))openTutorial();
 let popularLoaded=false;function go(id){document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===id));window.scrollTo({top:0,behavior:'smooth'});if(id==='search'&&!popularLoaded){popularLoaded=true;search(true)}}
 document.querySelectorAll('[data-tab]').forEach(x=>x.onclick=()=>go(x.dataset.tab));document.querySelectorAll('[data-go]').forEach(x=>x.onclick=()=>go(x.dataset.go));if(document.querySelector('.page.active')?.id==='search'&&!popularLoaded){popularLoaded=true;search(true)}
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
