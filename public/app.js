@@ -185,3 +185,69 @@ const themeKey='modpack-hub-theme';
 function applyTheme(theme){document.documentElement.dataset.theme=theme;const button=$('#theme-toggle');if(button)button.textContent=theme==='light'?'Ativar tema escuro':'Ativar tema claro'}
 applyTheme(localStorage.getItem(themeKey)==='light'?'light':'dark');
 $('#theme-toggle').onclick=()=>{const next=document.documentElement.dataset.theme==='light'?'dark':'light';localStorage.setItem(themeKey,next);applyTheme(next)};
+
+
+// Comunidade: leitura pública, publicação e envio de capa apenas com sessão autenticada.
+let communityLoaded=false,communityBusy=false;
+function renderCommunityAccess(){
+ const logged=Boolean(hubAccount);
+ $('#community-account-required').hidden=logged;
+ $('#community-publish-card').hidden=!logged;
+}
+async function loadCommunity(){
+ const host=$('#community-list');if(!host)return;
+ host.innerHTML='<div class="empty">Carregando publicações…</div>';
+ try{
+  const response=await fetch('/api/auth/community/packs',{credentials:'same-origin'});
+  const data=await response.json();if(!response.ok)throw Error(data.error||'Falha ao carregar comunidade.');
+  const packs=Array.isArray(data.packs)?data.packs:[];
+  if(!packs.length){host.innerHTML='<div class="empty">Ainda não há modpacks publicados. Seja o primeiro a compartilhar!</div>';return}
+  host.innerHTML=packs.map(p=>'<article class="community-pack"><img src="'+esc(p.image)+'" alt="Capa do modpack '+esc(p.name)+'" loading="lazy"><div class="community-pack-info"><h3>'+esc(p.name)+'</h3><p>Minecraft '+esc(p.minecraft_version)+'</p><p>'+esc(p.description||'Sem descrição.')+'</p><small>Publicado por '+esc(p.author)+' · '+esc(new Date(p.created_at).toLocaleDateString('pt-BR'))+'</small></div></article>').join('');
+ }catch(error){host.innerHTML='<div class="empty">'+esc(error.message)+'</div>'}
+}
+function readAsDataUrl(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(new Error('Não foi possível ler a foto.'));reader.readAsDataURL(file)})}
+async function compressCommunityImage(file){
+ if(!file||!['image/png','image/jpeg','image/webp'].includes(file.type))throw Error('Escolha uma foto PNG, JPG ou WebP.');
+ if(file.size>12*1024*1024)throw Error('A foto original deve ter no máximo 12 MB.');
+ const source=await readAsDataUrl(file);
+ const image=new Image();
+ await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(new Error('Imagem inválida ou não suportada.'));image.src=source});
+ const scale=Math.min(1,1200/Math.max(image.naturalWidth,image.naturalHeight));
+ const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
+ const context=canvas.getContext('2d');if(!context)throw Error('Não foi possível processar a foto.');
+ context.drawImage(image,0,0,canvas.width,canvas.height);
+ let quality=.86,blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',quality));
+ while(blob&&blob.size>1024*1024&&quality>.45){quality-=.1;blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',quality))}
+ if(!blob||blob.size>1024*1024)throw Error('Não foi possível reduzir a foto para menos de 1 MB. Escolha outra imagem.');
+ return await readAsDataUrl(blob);
+}
+const communityImage=$('#community-image');
+if(communityImage)communityImage.addEventListener('change',async()=>{
+ const preview=$('#community-preview'),file=communityImage.files?.[0];preview.innerHTML='';
+ if(!file)return;
+ try{const data=await compressCommunityImage(file);preview.innerHTML='<img src="'+data+'" alt="Prévia da capa selecionada">';preview.dataset.image=data}
+ catch(error){delete preview.dataset.image;communityImage.value='';toast(error.message)}
+});
+$('#community-form').addEventListener('submit',async event=>{
+ event.preventDefault();if(!hubAccount)return toast('Entre na sua conta antes de publicar.');
+ if(communityBusy)return;
+ const button=$('#community-submit'),preview=$('#community-preview');
+ const name=$('#community-name').value.trim(),version=$('#community-version').value.trim(),description=$('#community-description').value.trim();
+ if(name.length<3||!/^\d+\.\d+(\.\d+)?$/.test(version))return toast('Confira o nome e a versão do Minecraft.');
+ let image=preview.dataset.image;
+ if(!image&&communityImage.files?.[0]){try{image=await compressCommunityImage(communityImage.files[0]);preview.dataset.image=image;preview.innerHTML='<img src="'+image+'" alt="Prévia da capa selecionada">'}catch(error){return toast(error.message)}}
+ if(!image)return toast('Selecione uma foto de capa.');
+ communityBusy=true;button.disabled=true;button.textContent='Publicando…';
+ try{
+  const response=await fetch('/api/auth/community/packs',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({name,minecraft_version:version,description,image})});
+  const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||'Falha ao publicar.');
+  $('#community-form').reset();preview.innerHTML='';delete preview.dataset.image;
+  toast('Modpack publicado na comunidade!');await loadCommunity();
+ }catch(error){toast(error.message)}
+ finally{communityBusy=false;button.disabled=false;button.textContent='Publicar na comunidade'}
+});
+$('#community-refresh').onclick=loadCommunity;
+const previousGoForCommunity=go;
+go=function(id){previousGoForCommunity(id);if(id==='community'){renderCommunityAccess();if(!communityLoaded){communityLoaded=true;loadCommunity()}}};
+const previousRenderAccount=renderAccount;
+renderAccount=function(){previousRenderAccount();renderCommunityAccess()};
