@@ -66,7 +66,7 @@ app.get('/api/modrinth/project/:id/versions',async(req,res)=>{
 });
 app.get('/api/curseforge/search',async(req,res)=>{
   const headers=cfHeaders();if(!headers)return res.status(503).json({error:'Configure CURSEFORGE_API_KEY nos Secrets do Render.'});
-  try{const q=clean(req.query.query,100);
+  try{const q=clean(req.query.query,100),sort=clean(req.query.sort,20);
     const url=new URL('https://api.curseforge.com/v1/mods/search');url.searchParams.set('gameId','432');url.searchParams.set('classId','6');if(q)url.searchParams.set('searchFilter',q);const sortMap={downloads_desc:[6,'desc'],downloads_asc:[6,'asc'],date_desc:[3,'desc'],date_asc:[3,'asc']},chosen=sortMap[sort]||sortMap.downloads_desc;url.searchParams.set('sortField',String(chosen[0]));url.searchParams.set('sortOrder',chosen[1]);url.searchParams.set('pageSize',String(limit(req.query.limit,50)));url.searchParams.set('index',String(Math.max(0,Math.min(100000,Number.parseInt(req.query.page,10)||0))*limit(req.query.limit,50)));
     const gv=clean(req.query.game_version,20);if(gv)url.searchParams.set('gameVersion',gv);
     const loader=clean(req.query.loader,20).toLowerCase(),loaderType={forge:1,fabric:4,quilt:5,neoforge:6}[loader];if(loaderType)url.searchParams.set('modLoaderType',String(loaderType));
