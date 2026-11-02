@@ -2,6 +2,7 @@ import express from 'express';
 import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import pg from 'pg';
+import rateLimit from 'express-rate-limit';
 
 const { Pool } = pg;
 let pool;
@@ -12,9 +13,7 @@ function database() {
   if (!pool) pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
-    max: 5,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000
+    max: 5, idleTimeoutMillis: 30000, connectionTimeoutMillis: 10000
   });
   if (!schemaPromise) schemaPromise = pool.query(`
     CREATE TABLE IF NOT EXISTS hub_users (
@@ -43,7 +42,12 @@ function database() {
 const hashToken = value => crypto.createHash('sha256').update(value).digest('hex');
 const cookieName = 'hub_session';
 const production = process.env.NODE_ENV === 'production';
-
+function readCookie(req) {
+  const header = req.headers.cookie || '';
+  const pair = header.split(';').map(part => part.trim()).find(part => part.startsWith(cookieName + '='));
+  if (!pair) return '';
+  try { return decodeURIComponent(pair.slice(cookieName.length + 1)); } catch { return ''; }
+}
 function setSessionCookie(res, token) {
   res.cookie(cookieName, token, {
     httpOnly: true, secure: production, sameSite: 'lax',
@@ -56,7 +60,11 @@ function clearSessionCookie(res) {
 function validOrigin(req) {
   const origin = req.get('origin');
   if (!origin) return true;
-  try { return new URL(origin).host === req.get('host'); } catch { return false; }
+  try {
+    const parsed = new URL(origin);
+    return parsed.protocol === 'https:' || parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
+      ? parsed.host === req.get('host') : false;
+  } catch { return false; }
 }
 function publicUser(row) {
   return { id: String(row.id), name: row.display_name, email: row.email, createdAt: row.created_at };
@@ -64,19 +72,18 @@ function publicUser(row) {
 
 export function createAuthRouter() {
   const router = express.Router();
-  const authLimit = (awaitImport => awaitImport)(express); // keep router initialization synchronous
+  const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 8, standardHeaders: true, legacyHeaders: false, message: { error: 'Muitas tentativas. Aguarde 15 minutos e tente novamente.' } });
+  const registerLimit = rateLimit({ windowMs: 60 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false, message: { error: 'Muitas tentativas de cadastro. Tente novamente mais tarde.' } });
+
   router.use((req, res, next) => {
     if (!process.env.DATABASE_URL) return res.status(503).json({ error: 'O banco de dados ainda não está configurado.' });
-    next();
-  });
-  router.use(express.Router().use((req, res, next) => {
     if (!validOrigin(req)) return res.status(403).json({ error: 'Origem não autorizada.' });
     next();
-  }));
+  });
 
   async function currentUser(req) {
-    const token = req.cookies?.[cookieName];
-    if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
+    const token = readCookie(req);
+    if (!/^[a-f0-9]{64}$/.test(token)) return null;
     const result = await database().query(
       'SELECT u.id,u.display_name,u.email,u.created_at FROM hub_sessions s JOIN hub_users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>NOW()',
       [hashToken(token)]
@@ -88,9 +95,8 @@ export function createAuthRouter() {
     catch (error) { console.error('Auth session:', error.message); res.status(503).json({ error: 'Não foi possível consultar a sessão.' }); }
   });
 
-  router.post('/register', async (req, res) => {
+  router.post('/register', registerLimit, async (req, res) => {
     try {
-      await database();
       const name = String(req.body?.name || '').trim().replace(/\s+/g, ' ').slice(0, 60);
       const email = String(req.body?.email || '').trim().toLowerCase();
       const password = String(req.body?.password || '');
@@ -104,33 +110,28 @@ export function createAuthRouter() {
         [name, email, passwordHash]
       );
       const token = crypto.randomBytes(32).toString('hex');
-      await database().query(
-        "INSERT INTO hub_sessions(token_hash,user_id,expires_at) VALUES($1,$2,NOW()+INTERVAL '14 days')",
-        [hashToken(token), result.rows[0].id]
-      );
+      await database().query("INSERT INTO hub_sessions(token_hash,user_id,expires_at) VALUES($1,$2,NOW()+INTERVAL '14 days')", [hashToken(token), result.rows[0].id]);
       setSessionCookie(res, token);
       res.status(201).json({ user: publicUser(result.rows[0]) });
     } catch (error) {
-      if (error.code === '23505') return res.status(409).json({ error: 'Não foi possível criar a conta com esses dados. Verifique se o e-mail já está cadastrado.' });
+      if (error.code === '23505') return res.status(409).json({ error: 'Não foi possível criar a conta. Confira se o e-mail já está cadastrado.' });
       console.error('Auth register:', error.message);
-      res.status(503).json({ error: 'Falha ao criar a conta. Verifique a conexão do banco e tente novamente.' });
+      res.status(503).json({ error: 'Falha ao criar a conta. Verifique a conexão do banco.' });
     }
   });
 
-  router.post('/login', async (req, res) => {
+  router.post('/login', loginLimit, async (req, res) => {
     try {
       const email = String(req.body?.email || '').trim().toLowerCase();
       const password = String(req.body?.password || '');
-      if (email.length > 254 || password.length > 72) return res.status(400).json({ error: 'Dados inválidos.' });
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || password.length < 1 || password.length > 72)
+        return res.status(400).json({ error: 'Informe e-mail e senha válidos.' });
       const result = await database().query('SELECT * FROM hub_users WHERE email=$1', [email]);
       const row = result.rows[0];
-      const ok = row ? await bcrypt.compare(password, row.password_hash) : await bcrypt.compare(password || 'invalid-password', '$2a$12$C6UzMDM.H6dfI/f/IKcEe.4o6R8QvV4xj3M3M7V4Q6d2u4Q5V7m3e');
-      if (!row || !ok) return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
+      if (!row || !(await bcrypt.compare(password, row.password_hash)))
+        return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
       const token = crypto.randomBytes(32).toString('hex');
-      await database().query(
-        "INSERT INTO hub_sessions(token_hash,user_id,expires_at) VALUES($1,$2,NOW()+INTERVAL '14 days')",
-        [hashToken(token), row.id]
-      );
+      await database().query("INSERT INTO hub_sessions(token_hash,user_id,expires_at) VALUES($1,$2,NOW()+INTERVAL '14 days')", [hashToken(token), row.id]);
       setSessionCookie(res, token);
       res.json({ user: publicUser(row) });
     } catch (error) {
@@ -142,9 +143,8 @@ export function createAuthRouter() {
   router.get('/me', (req, res) => res.json({ user: req.hubUser ? publicUser(req.hubUser) : null }));
   router.post('/logout', async (req, res) => {
     try {
-      const token = req.cookies?.[cookieName];
-      if (token && /^[a-f0-9]{64}$/.test(token))
-        await database().query('DELETE FROM hub_sessions WHERE token_hash=$1', [hashToken(token)]);
+      const token = readCookie(req);
+      if (/^[a-f0-9]{64}$/.test(token)) await database().query('DELETE FROM hub_sessions WHERE token_hash=$1', [hashToken(token)]);
       clearSessionCookie(res);
       res.json({ ok: true });
     } catch (error) {
@@ -167,7 +167,8 @@ export function createAuthRouter() {
     if (!req.hubUser) return res.status(401).json({ error: 'Entre na sua conta para sincronizar a biblioteca.' });
     const packs = req.body?.packs;
     if (!Array.isArray(packs) || packs.length > 100) return res.status(400).json({ error: 'A biblioteca aceita até 100 modpacks.' });
-    const bytes = Buffer.byteLength(JSON.stringify(packs));
+    let bytes;
+    try { bytes = Buffer.byteLength(JSON.stringify(packs)); } catch { return res.status(400).json({ error: 'Formato da biblioteca inválido.' }); }
     if (bytes > 500000) return res.status(413).json({ error: 'A biblioteca ultrapassa o limite de 500 KB.' });
     try {
       await database().query(
@@ -180,6 +181,5 @@ export function createAuthRouter() {
       res.status(503).json({ error: 'Não foi possível sincronizar a biblioteca.' });
     }
   });
-
   return router;
 }
