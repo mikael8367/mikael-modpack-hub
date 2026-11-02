@@ -130,12 +130,14 @@ async function accountRequest(path,options={}) {
 }
 function renderAccount(){
  const state=$('#account-state'),forms=$('#account-forms'),logout=$('#account-logout'),pull=$('#account-sync-pull'),push=$('#account-sync-push');
- if(hubAccount){state.textContent='Conectado como '+hubAccount.name+' ('+hubAccount.email+').'; forms.hidden=true;logout.hidden=false;pull.disabled=false;push.disabled=false}
- else{state.textContent='Você está usando a biblioteca local. Entre para ativar a nuvem.';forms.hidden=false;logout.hidden=true;pull.disabled=true;push.disabled=true}
+ if(hubAccount?.offline){state.textContent='Conta offline: '+hubAccount.name+' · não sincroniza com a nuvem.';forms.hidden=true;logout.hidden=false;pull.disabled=true;push.disabled=true}
+ else if(hubAccount){state.textContent='Conectado como '+hubAccount.name+' ('+hubAccount.email+').'; forms.hidden=true;logout.hidden=false;pull.disabled=false;push.disabled=false}
+ else{state.textContent='Você está usando a biblioteca local. Crie uma conta online ou offline.';forms.hidden=false;logout.hidden=true;pull.disabled=true;push.disabled=true}
 }
+const offlineAccountKey='mikael-hub-offline-account';
 async function refreshAccount(){
- try{const data=await accountRequest('/me');hubAccount=data.user;renderAccount()}
- catch(error){hubAccount=null;renderAccount();$('#account-state').textContent=error.message}
+ try{const data=await accountRequest('/me');hubAccount=data.user;if(hubAccount)localStorage.removeItem(offlineAccountKey);else{try{hubAccount=JSON.parse(localStorage.getItem(offlineAccountKey)||'null')}catch{hubAccount=null}}renderAccount()}
+ catch(error){try{hubAccount=JSON.parse(localStorage.getItem(offlineAccountKey)||'null')}catch{hubAccount=null}renderAccount();if(!hubAccount)$('#account-state').textContent=error.message}
 }
 async function submitAccount(mode){
  const name=$('#account-name').value.trim().toLowerCase(),email=$('#account-email').value.trim(),password=$('#account-password').value;
@@ -145,9 +147,10 @@ async function submitAccount(mode){
   hubAccount=data.user;$('#account-password').value='';renderAccount();toast(mode==='/register'?'Conta criada com sucesso.':'Login realizado.');
  }catch(error){toast(error.message)}
 }
+$('#account-offline').onclick=()=>{const name=$('#offline-account-name').value.trim().toLowerCase();if(!/^[a-z0-9_]{3,20}$/.test(name))return toast('Use de 3 a 20 caracteres: letras, números e _.');hubAccount={name,username:name,offline:true};localStorage.setItem(offlineAccountKey,JSON.stringify(hubAccount));renderAccount();renderCommunityAccess();toast('Conta offline criada neste aparelho.')};
 $('#account-register').onclick=()=>submitAccount('/register');
 $('#account-login').onclick=()=>submitAccount('/login');
-$('#account-logout').onclick=async()=>{try{await accountRequest('/logout',{method:'POST',body:'{}'});hubAccount=null;renderAccount();toast('Sessão encerrada.')}catch(error){toast(error.message)}};
+$('#account-logout').onclick=async()=>{try{if(hubAccount?.offline)localStorage.removeItem(offlineAccountKey);else await accountRequest('/logout',{method:'POST',body:'{}'});hubAccount=null;renderAccount();renderCommunityAccess();toast('Sessão encerrada.')}catch(error){toast(error.message)}};
 $('#account-sync-pull').onclick=async()=>{
  if(!hubAccount)return;
  if(!confirm('Substituir a biblioteca deste aparelho pelos dados da nuvem? Exporte uma cópia antes se precisar.'))return;
@@ -203,7 +206,7 @@ async function loadCommunity(){
   const data=await response.json();if(!response.ok)throw Error(data.error||'Falha ao carregar comunidade.');
   const packs=Array.isArray(data.packs)?data.packs:[];
   if(!packs.length){host.innerHTML='<div class="empty">Ainda não há modpacks publicados. Seja o primeiro a compartilhar!</div>';return}
-  host.innerHTML=packs.map(p=>'<article class="community-pack"><img src="'+esc(p.image)+'" alt="Capa do modpack '+esc(p.name)+'" loading="lazy"><div class="community-pack-info"><h3>'+esc(p.name)+'</h3><p>Minecraft '+esc(p.minecraft_version)+'</p><p>'+esc(p.description||'Sem descrição.')+'</p><small>Publicado por '+esc(p.author)+' · '+esc(new Date(p.created_at).toLocaleDateString('pt-BR'))+'</small></div></article>').join('');
+  host.innerHTML=packs.map(p=>'<article class="community-pack"><img src="'+esc(p.image)+'" alt="Capa do modpack '+esc(p.name)+'" loading="lazy"><div class="community-pack-info"><h3>'+esc(p.name)+'</h3><p>Minecraft '+esc(p.minecraft_version)+'</p><p>'+esc(p.description||'Sem descrição.')+'</p><small>Publicado por '+esc(p.author)+(p.offline?' <span class="offline-mark" title="Conta offline">◌ OFFLINE</span>':'')+' · '+esc(new Date(p.created_at).toLocaleDateString('pt-BR'))+'</small></div></article>').join('');
  }catch(error){host.innerHTML='<div class="empty">'+esc(error.message)+'</div>'}
 }
 function readAsDataUrl(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(new Error('Não foi possível ler a foto.'));reader.readAsDataURL(file)})}
@@ -230,7 +233,7 @@ if(communityImage)communityImage.addEventListener('change',async()=>{
  catch(error){delete preview.dataset.image;communityImage.value='';toast(error.message)}
 });
 $('#community-form').addEventListener('submit',async event=>{
- event.preventDefault();if(!hubAccount)return toast('Entre na sua conta antes de publicar.');
+ event.preventDefault();if(!hubAccount)return toast('Crie uma conta online ou offline antes de publicar.');
  if(communityBusy)return;
  const button=$('#community-submit'),preview=$('#community-preview');
  const name=$('#community-name').value.trim(),version=$('#community-version').value.trim(),description=$('#community-description').value.trim();
@@ -240,7 +243,7 @@ $('#community-form').addEventListener('submit',async event=>{
  if(!image)return toast('Selecione uma foto de capa.');
  communityBusy=true;button.disabled=true;button.textContent='Publicando…';
  try{
-  const response=await fetch('/api/auth/community/packs',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({name,minecraft_version:version,description,image})});
+  const response=await fetch('/api/auth/community/packs',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({name,minecraft_version:version,description,image,...(hubAccount?.offline?{offline:true,offline_username:hubAccount.username||hubAccount.name}:{})})});
   const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||'Falha ao publicar.');
   $('#community-form').reset();preview.innerHTML='';delete preview.dataset.image;
   toast('Modpack publicado na comunidade!');await loadCommunity();
