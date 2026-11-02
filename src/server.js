@@ -103,7 +103,7 @@ app.get('/api/bedrock/search',async(req,res)=>{
     const bedrockClass=classes.find(c=>/bedrock|addon/i.test(String(c.name)+' '+String(c.slug)));
     if(!bedrockClass)throw new Error('A categoria Bedrock não foi identificada no catálogo CurseForge.');
     const url=new URL('https://api.curseforge.com/v1/mods/search');url.searchParams.set('gameId','432');url.searchParams.set('classId',String(bedrockClass.id));url.searchParams.set('pageSize',String(size));url.searchParams.set('index',String(page*size));
-    if(q)url.searchParams.set('searchFilter',q);const sort=clean(req.query.sort,20),sortMap={downloads_desc:[6,'desc'],downloads_asc:[6,'asc'],date_desc:[3,'desc'],date_asc:[3,'asc']},chosen=sortMap[sort]||sortMap.downloads_desc;url.searchParams.set('sortField',String(chosen[0]));url.searchParams.set('sortOrder',chosen[1]);
+    if(q)url.searchParams.set('searchFilter',q);const sortMap={downloads_desc:[6,'desc'],downloads_asc:[6,'asc'],date_desc:[3,'desc'],date_asc:[3,'asc']},chosen=sortMap[sort]||sortMap.downloads_desc;url.searchParams.set('sortField',String(chosen[0]));url.searchParams.set('sortOrder',chosen[1]);
     const d=await getJson(url,headers);
     res.json({provider:'curseforge-bedrock',total:d.pagination?.totalCount||0,results:(d.data||[]).map(m=>({id:m.id,title:m.name,description:m.summary,downloads:m.downloadCount,icon_url:m.logo?.url,url:m.links?.websiteUrl||('https://www.curseforge.com/minecraft-bedrock/addons/'+m.slug)}))});
   }catch(e){console.error('Bedrock search:',e.message);res.status(e.status||502).json({error:e.message||'Falha ao pesquisar add-ons Bedrock.'});}
