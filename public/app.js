@@ -261,8 +261,13 @@ $('#theme-toggle').onclick=()=>{const next=document.documentElement.dataset.them
 let communityLoaded=false,communityBusy=false;
 function renderCommunityAccess(){
  const logged=Boolean(hubAccount);
+ const creator=Boolean(logged&&!hubAccount.offline&&String(hubAccount.username||'').toLowerCase()==='mikael_oficial');
  $('#community-account-required').hidden=logged;
  $('#community-publish-card').hidden=!logged;
+ const hint=$('#community-publish-card')?.querySelector('b');
+ if(hint)hint.textContent='Publicar na comunidade pública';
+ const officialHint=$('#community-publish-card')?.querySelector('.official-publish-note');
+ if(officialHint)officialHint.hidden=!creator;
 }
 let communityEditingId=null,communityEditingToken=null;
 const communityOfflineTokensKey='mikael-community-edit-tokens';
@@ -270,16 +275,17 @@ function communityOfflineTokens(){try{return JSON.parse(localStorage.getItem(com
 function newCommunityToken(){const bytes=new Uint8Array(32);crypto.getRandomValues(bytes);return [...bytes].map(x=>x.toString(16).padStart(2,'0')).join('')}
 function resetCommunityEditor(){communityEditingId=null;communityEditingToken=null;$('#community-form').reset();const preview=$('#community-preview');preview.innerHTML='';delete preview.dataset.image;$('#community-submit').textContent='Publicar na comunidade';const cancel=$('#community-cancel-edit');if(cancel)cancel.hidden=true}
 async function loadCommunity(){
- const host=$('#community-list');if(!host)return;
- host.innerHTML='<div class="empty">Carregando publicações…</div>';
+ const host=$('#community-list'),officialHost=$('#official-community-list');if(!host||!officialHost)return;
+ host.innerHTML='<div class="empty">Carregando publicações…</div>';officialHost.innerHTML='<div class="empty">Carregando modpacks oficiais…</div>';
  try{
   const response=await fetch('/api/auth/community/packs',{credentials:'same-origin'});
   const data=await response.json();if(!response.ok)throw Error(data.error||'Falha ao carregar comunidade.');
-  const packs=Array.isArray(data.packs)?data.packs:[];
-  if(!packs.length){host.innerHTML='<div class="empty">Ainda não há modpacks publicados. Seja o primeiro a compartilhar!</div>';return}
-  const tokens=communityOfflineTokens();
-  host.innerHTML=packs.map(p=>{const isCreator=Boolean(hubAccount&&!hubAccount.offline&&String(hubAccount.username||'').toLowerCase()==='mikael_oficial');const canEdit=Boolean((hubAccount&&!hubAccount.offline&&String(hubAccount.id)===String(p.user_id))||(p.offline&&tokens[p.id]));const canDelete=canEdit||isCreator;return '<article class="community-pack"><img src="'+esc(p.image)+'" alt="Capa do modpack '+esc(p.name)+'" loading="lazy"><div class="community-pack-info"><h3>'+esc(p.name)+'</h3><p>Minecraft '+esc(p.minecraft_version)+'</p><p>'+esc(p.description||'Sem descrição.')+'</p><small>Publicado por '+esc(p.author)+(!p.offline&&String(p.author||'').toLowerCase()==='mikael_oficial'?' <span class="creator-mark" title="Criador oficial do Mikael Modpack Hub">✦ CRIADOR</span>':'')+(p.offline?' <span class="offline-mark" title="Conta offline">◌ OFFLINE</span>':'')+' · '+esc(new Date(p.created_at).toLocaleDateString('pt-BR'))+'</small>'+(canEdit?'<button type="button" class="secondary community-edit" data-id="'+esc(p.id)+'">Editar modpack</button>':'')+(canDelete?'<button type="button" class="secondary community-delete" data-id="'+esc(p.id)+'">Excluir modpack</button>':'')+'</div></article>'}).join('');
- }catch(error){host.innerHTML='<div class="empty">'+esc(error.message)+'</div>'}
+  const packs=Array.isArray(data.packs)?data.packs:[],official=packs.filter(p=>p.is_official),publicPacks=packs.filter(p=>!p.is_official);
+  const tokens=communityOfflineTokens(),isCreator=Boolean(hubAccount&&!hubAccount.offline&&String(hubAccount.username||'').toLowerCase()==='mikael_oficial');
+  const card=p=>{const canEdit=p.is_official?isCreator:Boolean((hubAccount&&!hubAccount.offline&&String(hubAccount.id)===String(p.user_id))||(p.offline&&tokens[p.id]));const canDelete=canEdit||isCreator;return '<article class="community-pack"><img src="'+esc(p.image)+'" alt="Capa do modpack '+esc(p.name)+'" loading="lazy"><div class="community-pack-info"><h3>'+esc(p.name)+(p.is_official?' <span class="creator-mark">✦ OFICIAL</span>':'')+'</h3><p>Minecraft '+esc(p.minecraft_version)+'</p><p>'+esc(p.description||'Sem descrição.')+'</p><small>Publicado por '+esc(p.author)+(p.offline?' <span class="offline-mark">◌ OFFLINE</span>':'')+' · '+esc(new Date(p.created_at).toLocaleDateString('pt-BR'))+'</small>'+(canEdit?'<button type="button" class="secondary community-edit" data-id="'+esc(p.id)+'">Editar modpack</button>':'')+(canDelete?'<button type="button" class="secondary community-delete" data-id="'+esc(p.id)+'">Excluir modpack</button>':'')+'</div></article>'};
+  officialHost.innerHTML=official.length?official.map(card).join(''):'<div class="empty">Ainda não há modpacks oficiais publicados.</div>';
+  host.innerHTML=publicPacks.length?publicPacks.map(card).join(''):'<div class="empty">Ainda não há publicações públicas. Seja o primeiro a compartilhar!</div>';
+ }catch(error){host.innerHTML='<div class="empty">'+esc(error.message)+'</div>';officialHost.innerHTML='<div class="empty">'+esc(error.message)+'</div>'}
 }
 $('#community-list').addEventListener('click',async event=>{
  const button=event.target.closest('.community-delete');if(!button)return;
