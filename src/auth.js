@@ -74,7 +74,7 @@ function readCookie(req) {
 function setSessionCookie(res, token) {
   res.cookie(cookieName, token, {
     httpOnly: true, secure: production, sameSite: 'lax',
-    path: '/api/auth', maxAge: 1000 * 60 * 60 * 24 * 14
+    path: '/api/auth', maxAge: 1000 * 60 * 60 * 24 * 30
   });
 }
 function clearSessionCookie(res) {
@@ -109,7 +109,7 @@ export function createAuthRouter() {
     if (!/^[a-f0-9]{64}$/.test(token)) return null;
     if (schemaPromise) await schemaPromise;
     const result = await dbQuery(
-      'SELECT u.id,u.display_name,u.email,u.created_at FROM hub_sessions s JOIN hub_users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>NOW()',
+      'SELECT u.id,u.display_name,u.username,u.email,u.created_at FROM hub_sessions s JOIN hub_users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>NOW()',
       [hashToken(token)]
     );
     return result.rows[0] || null;
@@ -137,7 +137,7 @@ export function createAuthRouter() {
         [username, username, email, passwordHash]
       );
       const token = crypto.randomBytes(32).toString('hex');
-      await dbQuery("INSERT INTO hub_sessions(token_hash,user_id,expires_at) VALUES($1,$2,NOW()+INTERVAL '14 days')", [hashToken(token), result.rows[0].id]);
+      await dbQuery("INSERT INTO hub_sessions(token_hash,user_id,expires_at) VALUES($1,$2,NOW()+INTERVAL '30 days')", [hashToken(token), result.rows[0].id]);
       setSessionCookie(res, token);
       res.status(201).json({ user: publicUser(result.rows[0]) });
     } catch (error) {
