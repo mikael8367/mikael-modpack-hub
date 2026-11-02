@@ -169,7 +169,7 @@ async function submitAccount(mode){
   hubAccount=data.user;$('#account-password').value='';renderAccount();toast(mode==='/register'?'Conta criada com sucesso.':'Login realizado.');
  }catch(error){toast(error.message)}
 }
-$('#account-offline').onclick=()=>{const name=$('#offline-account-name').value.trim().toLowerCase();if(!/^[a-z0-9_]{3,20}$/.test(name))return toast('Use de 3 a 20 caracteres: letras, números e _.');hubAccount={name,username:name,offline:true};localStorage.setItem(offlineAccountKey,JSON.stringify(hubAccount));renderAccount();renderCommunityAccess();toast('Conta offline criada neste aparelho.')};
+$('#account-offline').onclick=()=>{const name=$('#offline-account-name').value.trim().toLowerCase();if(name==='mikael_oficial')return toast('O nome mikael_oficial é reservado ao criador oficial.');if(!/^[a-z0-9_]{3,20}$/.test(name))return toast('Use de 3 a 20 caracteres: letras, números e _.');hubAccount={name,username:name,offline:true};localStorage.setItem(offlineAccountKey,JSON.stringify(hubAccount));renderAccount();renderCommunityAccess();toast('Conta offline criada neste aparelho.')};
 $('#account-change-name').onclick=async()=>{
  const name=$('#account-new-name').value.trim().toLowerCase();
  if(!/^[a-z0-9_]{3,20}$/.test(name))return toast('Use 3 a 20 caracteres: letras, números e _.');
@@ -177,6 +177,7 @@ $('#account-change-name').onclick=async()=>{
  if(name===(hubAccount.username||hubAccount.name))return toast('Esse já é seu nome.');
  const button=$('#account-change-name');button.disabled=true;
  try{
+  if(name==='mikael_oficial'&&(!hubAccount.offline?hubAccount.username!=='mikael_oficial':true))throw Error('Esse nome é reservado ao criador oficial.');
   if(hubAccount.offline){
    hubAccount={...hubAccount,name,username:name};
    localStorage.setItem(offlineAccountKey,JSON.stringify(hubAccount));
@@ -252,9 +253,21 @@ async function loadCommunity(){
   const packs=Array.isArray(data.packs)?data.packs:[];
   if(!packs.length){host.innerHTML='<div class="empty">Ainda não há modpacks publicados. Seja o primeiro a compartilhar!</div>';return}
   const tokens=communityOfflineTokens();
-  host.innerHTML=packs.map(p=>{const canEdit=Boolean((hubAccount&&!hubAccount.offline&&String(hubAccount.id)===String(p.user_id))||(p.offline&&tokens[p.id]));return '<article class="community-pack"><img src="'+esc(p.image)+'" alt="Capa do modpack '+esc(p.name)+'" loading="lazy"><div class="community-pack-info"><h3>'+esc(p.name)+'</h3><p>Minecraft '+esc(p.minecraft_version)+'</p><p>'+esc(p.description||'Sem descrição.')+'</p><small>Publicado por '+esc(p.author)+(!p.offline&&String(p.author||'').toLowerCase()==='mikael_oficial'?' <span class="creator-mark" title="Criador oficial do Mikael Modpack Hub">✦ CRIADOR</span>':'')+(p.offline?' <span class="offline-mark" title="Conta offline">◌ OFFLINE</span>':'')+' · '+esc(new Date(p.created_at).toLocaleDateString('pt-BR'))+'</small>'+(canEdit?'<button type="button" class="secondary community-edit" data-id="'+esc(p.id)+'">Editar modpack</button>':'')+'</div></article>'}).join('');
+  host.innerHTML=packs.map(p=>{const isCreator=Boolean(hubAccount&&!hubAccount.offline&&String(hubAccount.username||'').toLowerCase()==='mikael_oficial');const canEdit=Boolean((hubAccount&&!hubAccount.offline&&String(hubAccount.id)===String(p.user_id))||(p.offline&&tokens[p.id]));const canDelete=canEdit||isCreator;return '<article class="community-pack"><img src="'+esc(p.image)+'" alt="Capa do modpack '+esc(p.name)+'" loading="lazy"><div class="community-pack-info"><h3>'+esc(p.name)+'</h3><p>Minecraft '+esc(p.minecraft_version)+'</p><p>'+esc(p.description||'Sem descrição.')+'</p><small>Publicado por '+esc(p.author)+(!p.offline&&String(p.author||'').toLowerCase()==='mikael_oficial'?' <span class="creator-mark" title="Criador oficial do Mikael Modpack Hub">✦ CRIADOR</span>':'')+(p.offline?' <span class="offline-mark" title="Conta offline">◌ OFFLINE</span>':'')+' · '+esc(new Date(p.created_at).toLocaleDateString('pt-BR'))+'</small>'+(canEdit?'<button type="button" class="secondary community-edit" data-id="'+esc(p.id)+'">Editar modpack</button>':'')+(canDelete?'<button type="button" class="secondary community-delete" data-id="'+esc(p.id)+'">Excluir modpack</button>':'')+'</div></article>'}).join('');
  }catch(error){host.innerHTML='<div class="empty">'+esc(error.message)+'</div>'}
 }
+$('#community-list').addEventListener('click',async event=>{
+ const button=event.target.closest('.community-delete');if(!button)return;
+ const id=button.dataset.id;
+ if(!hubAccount||!confirm('Tem certeza que deseja excluir este modpack da comunidade? Esta ação não pode ser desfeita.'))return;
+ button.disabled=true;
+ try{
+  const response=await fetch('/api/auth/community/packs/'+encodeURIComponent(id),{method:'DELETE',credentials:'same-origin'});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw Error(data.error||'Não foi possível excluir o modpack.');
+  await loadCommunity();toast('Modpack excluído da comunidade.');
+ }catch(error){button.disabled=false;toast(error.message)}
+});
 function readAsDataUrl(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(new Error('Não foi possível ler a foto.'));reader.readAsDataURL(file)})}
 async function compressCommunityImage(file){
  if(!file||!['image/png','image/jpeg','image/webp'].includes(file.type))throw Error('Escolha uma foto PNG, JPG ou WebP.');
