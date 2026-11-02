@@ -96,6 +96,7 @@
 .tutorial-overlay[hidden]{display:none}
 .tutorial-card{width:min(100%,440px);max-height:min(88dvh,680px);overflow:auto;padding:20px;border:1px solid #34734f;border-radius:22px;background:var(--panel);box-shadow:0 24px 90px #0009;animation:tutorial-in .22s ease-out}
 .tutorial-top,.tutorial-actions{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.tutorial-actions button{flex:1}
 .tutorial-skip{border:0;background:transparent;color:var(--muted);font-size:12px;padding:8px}
 .tutorial-progress{height:6px;margin:15px 0 9px;border-radius:99px;background:var(--line);overflow:hidden}
 .tutorial-progress span{display:block;height:100%;width:16.66%;border-radius:99px;background:var(--lime);transition:width .2s ease}
