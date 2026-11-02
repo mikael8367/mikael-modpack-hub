@@ -89,3 +89,25 @@
 
 /* Identificação da conta oficial do criador */
 .creator-mark{display:inline-flex;align-items:center;gap:3px;margin-left:5px;padding:2px 7px;border:1px solid rgba(52,211,153,.42);border-radius:999px;background:rgba(16,185,129,.12);color:#34d399;font-size:10px;font-weight:800;letter-spacing:.045em;vertical-align:middle}
+
+
+/* Tutorial inicial guiado, adaptado para telas de celular */
+.tutorial-overlay{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:18px;background:rgba(1,8,5,.82);backdrop-filter:blur(8px)}
+.tutorial-overlay[hidden]{display:none}
+.tutorial-card{width:min(100%,440px);max-height:min(88dvh,680px);overflow:auto;padding:20px;border:1px solid #34734f;border-radius:22px;background:var(--panel);box-shadow:0 24px 90px #0009;animation:tutorial-in .22s ease-out}
+.tutorial-top,.tutorial-actions{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.tutorial-skip{border:0;background:transparent;color:var(--muted);font-size:12px;padding:8px}
+.tutorial-progress{height:6px;margin:15px 0 9px;border-radius:99px;background:var(--line);overflow:hidden}
+.tutorial-progress span{display:block;height:100%;width:16.66%;border-radius:99px;background:var(--lime);transition:width .2s ease}
+.tutorial-count{font-size:11px;color:var(--muted);margin:0}
+.tutorial-icon{display:grid;place-items:center;width:54px;height:54px;margin:22px 0 13px;border-radius:16px;background:#153b27;color:var(--lime);font-size:28px}
+.tutorial-card h2{font-size:23px;line-height:1.2;margin:0 0 10px}
+.tutorial-card #tutorial-description{font-size:14px;line-height:1.7;color:var(--muted);margin:0}
+.tutorial-tip{margin:17px 0;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);font-size:12px;line-height:1.6}
+.tutorial-actions{margin-top:20px}.tutorial-actions button{min-width:105px}
+body.tutorial-open{overflow:hidden}
+:root[data-theme="light"] .tutorial-overlay{background:rgba(13,35,23,.55)}
+:root[data-theme="light"] .tutorial-card{background:#fff}
+:root[data-theme="light"] .tutorial-icon{background:#e2f4e8;color:#176b40}
+@keyframes tutorial-in{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+@media(prefers-reduced-motion:reduce){.tutorial-card{animation:none}.tutorial-progress span{transition:none}}
