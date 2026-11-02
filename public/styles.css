@@ -83,3 +83,5 @@
 .crash-mods p{font-size:12px;line-height:1.6;overflow-wrap:anywhere}
 .crash-mods small{font-size:10px;color:var(--muted)}
 :root[data-theme="light"] .crash-root,:root[data-theme="light"] .crash-mods{background:#f6faf7}
+
+.offline-account{margin-top:16px;padding:14px;border:1px solid var(--border);border-radius:14px;display:grid;gap:10px}.offline-account small{color:var(--muted)}.offline-mark{display:inline-flex;align-items:center;margin-left:5px;padding:2px 6px;border:1px solid var(--border);border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.04em;color:var(--muted)}
