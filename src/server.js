@@ -67,7 +67,7 @@ app.get('/api/modrinth/project/:id/versions',async(req,res)=>{
 app.get('/api/curseforge/search',async(req,res)=>{
   const headers=cfHeaders();if(!headers)return res.status(503).json({error:'Configure CURSEFORGE_API_KEY nos Secrets do Render.'});
   try{const q=clean(req.query.query,100);
-    const url=new URL('https://api.curseforge.com/v1/mods/search');url.searchParams.set('gameId','432');url.searchParams.set('classId','6');if(q)url.searchParams.set('searchFilter',q);const sort=clean(req.query.sort,20),sortMap={downloads_desc:[6,'desc'],downloads_asc:[6,'asc'],date_desc:[11,'desc'],date_asc:[11,'asc']},chosen=sortMap[sort]||sortMap.downloads_desc;url.searchParams.set('sortField',String(chosen[0]));url.searchParams.set('sortOrder',chosen[1]);url.searchParams.set('pageSize',String(limit(req.query.limit,50)));url.searchParams.set('index',String(Math.max(0,Math.min(100000,Number.parseInt(req.query.page,10)||0))*limit(req.query.limit,50)));
+    const url=new URL('https://api.curseforge.com/v1/mods/search');url.searchParams.set('gameId','432');url.searchParams.set('classId','6');if(q)url.searchParams.set('searchFilter',q);const sort=clean(req.query.sort,20),sortMap={downloads_desc:[6,'desc'],downloads_asc:[6,'asc'],date_desc:[3,'desc'],date_asc:[3,'asc']},chosen=sortMap[sort]||sortMap.downloads_desc;url.searchParams.set('sortField',String(chosen[0]));url.searchParams.set('sortOrder',chosen[1]);url.searchParams.set('pageSize',String(limit(req.query.limit,50)));url.searchParams.set('index',String(Math.max(0,Math.min(100000,Number.parseInt(req.query.page,10)||0))*limit(req.query.limit,50)));
     const gv=clean(req.query.game_version,20);if(gv)url.searchParams.set('gameVersion',gv);
     const loader=clean(req.query.loader,20).toLowerCase(),loaderType={forge:1,fabric:4,quilt:5,neoforge:6}[loader];if(loaderType)url.searchParams.set('modLoaderType',String(loaderType));
     const d=await getJson(url,headers);res.json({provider:'curseforge',total:d.pagination?.totalCount||0,results:(d.data||[]).map(m=>({id:m.id,name:m.name,slug:m.slug,summary:m.summary,downloads:m.downloadCount,logo:m.logo?.url,websiteUrl:m.links?.websiteUrl}))});
@@ -97,13 +97,13 @@ app.get('/api/curseforge/mod/:id/files',async(req,res)=>{
 app.get('/api/bedrock/search',async(req,res)=>{
   const headers=cfHeaders();if(!headers)return res.status(503).json({error:'Configure CURSEFORGE_API_KEY nos Secrets do Render para pesquisar add-ons.'});
   try{
-    const q=clean(req.query.query,100),page=Math.max(0,Math.min(10000,Number.parseInt(req.query.page,10)||0)),size=limit(req.query.limit,20);
+    const q=clean(req.query.query,100),page=Math.max(0,Math.min(10000,Number.parseInt(req.query.page,10)||0)),size=limit(req.query.limit,20),sort=clean(req.query.sort,20);
     const categories=await getJson('https://api.curseforge.com/v1/categories?gameId=432&classesOnly=true',headers);
     const classes=categories.data||[];
     const bedrockClass=classes.find(c=>/bedrock|addon/i.test(String(c.name)+' '+String(c.slug)));
     if(!bedrockClass)throw new Error('A categoria Bedrock não foi identificada no catálogo CurseForge.');
     const url=new URL('https://api.curseforge.com/v1/mods/search');url.searchParams.set('gameId','432');url.searchParams.set('classId',String(bedrockClass.id));url.searchParams.set('pageSize',String(size));url.searchParams.set('index',String(page*size));
-    if(q)url.searchParams.set('searchFilter',q);else{url.searchParams.set('sortField','6');url.searchParams.set('sortOrder','desc');}
+    if(q)url.searchParams.set('searchFilter',q);const sort=clean(req.query.sort,20),sortMap={downloads_desc:[6,'desc'],downloads_asc:[6,'asc'],date_desc:[3,'desc'],date_asc:[3,'asc']},chosen=sortMap[sort]||sortMap.downloads_desc;url.searchParams.set('sortField',String(chosen[0]));url.searchParams.set('sortOrder',chosen[1]);
     const d=await getJson(url,headers);
     res.json({provider:'curseforge-bedrock',total:d.pagination?.totalCount||0,results:(d.data||[]).map(m=>({id:m.id,title:m.name,description:m.summary,downloads:m.downloadCount,icon_url:m.logo?.url,url:m.links?.websiteUrl||('https://www.curseforge.com/minecraft-bedrock/addons/'+m.slug)}))});
   }catch(e){console.error('Bedrock search:',e.message);res.status(e.status||502).json({error:e.message||'Falha ao pesquisar add-ons Bedrock.'});}
