@@ -54,6 +54,7 @@ function database() {
       user_id BIGINT REFERENCES hub_users(id) ON DELETE CASCADE,
       author_name VARCHAR(20),
       is_offline BOOLEAN NOT NULL DEFAULT FALSE,
+      is_official BOOLEAN NOT NULL DEFAULT FALSE,
       pack_name VARCHAR(80) NOT NULL,
       minecraft_version VARCHAR(20) NOT NULL,
       description VARCHAR(500) NOT NULL DEFAULT '',
@@ -63,6 +64,7 @@ function database() {
     ALTER TABLE hub_community_packs ALTER COLUMN user_id DROP NOT NULL;
     ALTER TABLE hub_community_packs ADD COLUMN IF NOT EXISTS author_name VARCHAR(20);
     ALTER TABLE hub_community_packs ADD COLUMN IF NOT EXISTS is_offline BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE hub_community_packs ADD COLUMN IF NOT EXISTS is_official BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE hub_community_packs ADD COLUMN IF NOT EXISTS offline_edit_hash TEXT;
     ALTER TABLE hub_community_packs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
     UPDATE hub_community_packs p SET author_name=u.display_name FROM hub_users u WHERE p.user_id=u.id AND (p.author_name IS NULL OR p.author_name='');
@@ -210,11 +212,11 @@ export function createAuthRouter() {
   router.get('/community/packs', async (req, res) => {
     try {
       const result = await dbQuery(
-        'SELECT p.id,p.pack_name,p.minecraft_version,p.description,p.image_data,p.created_at,p.user_id,COALESCE(p.author_name,u.display_name,\'Usuário\') AS author_name,p.is_offline FROM hub_community_packs p LEFT JOIN hub_users u ON u.id=p.user_id ORDER BY p.created_at DESC LIMIT 100'
+        'SELECT p.id,p.pack_name,p.minecraft_version,p.description,p.image_data,p.created_at,p.user_id,COALESCE(p.author_name,u.display_name,\'Usuário\') AS author_name,p.is_offline,p.is_official FROM hub_community_packs p LEFT JOIN hub_users u ON u.id=p.user_id ORDER BY p.created_at DESC LIMIT 100'
       );
       res.json({ packs: result.rows.map(row => ({
         id: String(row.id), name: row.pack_name, minecraft_version: row.minecraft_version,
-        description: row.description, image: row.image_data, author: row.author_name, offline: row.is_offline, user_id: row.user_id ? String(row.user_id) : null, created_at: row.created_at
+        description: row.description, image: row.image_data, author: row.author_name, offline: row.is_offline, is_official: Boolean(row.is_official), user_id: row.user_id ? String(row.user_id) : null, created_at: row.created_at
       })) });
     } catch (error) {
       console.error('Community list:', error.message);
@@ -222,6 +224,10 @@ export function createAuthRouter() {
     }
   });
   router.post('/community/packs', async (req, res) => {
+    const wantsOfficial = req.body?.is_official === true;
+    const isCreator = Boolean(req.hubUser && String(req.hubUser.username || '').toLowerCase() === 'mikael_oficial');
+    if (wantsOfficial && !isCreator) return res.status(403).json({ error: 'Somente o criador oficial pode publicar na Comunidade Oficial.' });
+    if (wantsOfficial && !req.hubUser) return res.status(401).json({ error: 'Entre na conta do criador oficial.' });
     const offline = !req.hubUser;
     const offlineName = String(req.body?.offline_username || '').trim().toLowerCase();
     if (offline && (!req.body?.offline || !/^[a-z0-9_]{3,20}$/.test(offlineName))) return res.status(401).json({ error: 'Entre em uma conta ou informe um nome offline válido.' });
@@ -242,13 +248,13 @@ export function createAuthRouter() {
       return res.status(413).json({ error: 'A foto deve ter no máximo 1 MB.' });
     try {
       const result = await dbQuery(
-        'INSERT INTO hub_community_packs(user_id,author_name,is_offline,offline_edit_hash,pack_name,minecraft_version,description,image_data) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,pack_name,minecraft_version,description,image_data,created_at',
-        [offline ? null : req.hubUser.id, authorName, offline, offline ? (typeof req.body?.offline_edit_token === 'string' && req.body.offline_edit_token.length >= 32 ? crypto.createHash('sha256').update(req.body.offline_edit_token).digest('hex') : null) : null, name, version, description, image]
+        'INSERT INTO hub_community_packs(user_id,author_name,is_offline,is_official,offline_edit_hash,pack_name,minecraft_version,description,image_data) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,pack_name,minecraft_version,description,image_data,created_at,is_official',
+        [offline ? null : req.hubUser.id, authorName, offline, wantsOfficial, offline ? (typeof req.body?.offline_edit_token === 'string' && req.body.offline_edit_token.length >= 32 ? crypto.createHash('sha256').update(req.body.offline_edit_token).digest('hex') : null) : null, name, version, description, image]
       );
       const row = result.rows[0];
       res.status(201).json({ pack: {
         id: String(row.id), name: row.pack_name, minecraft_version: row.minecraft_version,
-        description: row.description, image: row.image_data, author: authorName, offline, created_at: row.created_at
+        description: row.description, image: row.image_data, author: authorName, offline, is_official: Boolean(row.is_official), created_at: row.created_at
       } });
     } catch (error) {
       console.error('Community publish:', error.message);
@@ -276,9 +282,9 @@ export function createAuthRouter() {
     try {
       const result = await dbQuery(
         `UPDATE hub_community_packs SET pack_name=$1,minecraft_version=$2,description=$3,image_data=COALESCE($4,image_data),updated_at=NOW()
-         WHERE id=$5 AND ((user_id IS NOT NULL AND user_id=$6) OR (is_offline=TRUE AND offline_edit_hash IS NOT NULL AND offline_edit_hash=$7))
+         WHERE id=$5 AND ((is_official=TRUE AND $8=TRUE) OR (is_official=FALSE AND ((user_id IS NOT NULL AND user_id=$6) OR (is_offline=TRUE AND offline_edit_hash IS NOT NULL AND offline_edit_hash=$7))))
          RETURNING id,pack_name,minecraft_version,description,image_data,author_name,is_offline,created_at,updated_at`,
-        [name, version, description, imageValue ? image : null, req.params.id, req.hubUser?.id || null, tokenHash]
+        [name, version, description, imageValue ? image : null, req.params.id, req.hubUser?.id || null, tokenHash, Boolean(req.hubUser && String(req.hubUser.username || '').toLowerCase() === 'mikael_oficial')]
       );
       if (!result.rowCount) return res.status(404).json({ error: 'Publicação não encontrada ou você não tem permissão para editá-la.' });
       const row = result.rows[0];
@@ -295,7 +301,7 @@ export function createAuthRouter() {
       const isCreator = String(req.hubUser.username || '').toLowerCase() === 'mikael_oficial';
       const result = isCreator
         ? await dbQuery('DELETE FROM hub_community_packs WHERE id=$1 RETURNING id', [req.params.id])
-        : await dbQuery('DELETE FROM hub_community_packs WHERE id=$1 AND user_id=$2 RETURNING id', [req.params.id, req.hubUser.id]);
+        : await dbQuery('DELETE FROM hub_community_packs WHERE id=$1 AND is_official=FALSE AND user_id=$2 RETURNING id', [req.params.id, req.hubUser.id]);
       if (!result.rowCount) return res.status(404).json({ error: 'Publicação não encontrada ou não pertence à sua conta.' });
       res.json({ ok: true });
     } catch (error) {
