@@ -1,4 +1,4 @@
-const $=s=>document.querySelector(s);let selected=[],results=[],currentPage=0,searchRequest=0;const PAGE_SIZE=20;
+const $=s=>document.querySelector(s);let selected=[],results=[],currentPage=0,searchRequest=0;const PAGE_SIZE=20;let searchTotal=0;
 function toast(s){const e=$('#toast');e.textContent=s;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),2500)}
 let popularLoaded=false;function go(id){document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===id));window.scrollTo({top:0,behavior:'smooth'});if(id==='search'&&!popularLoaded){popularLoaded=true;search(true)}}
 document.querySelectorAll('[data-tab]').forEach(x=>x.onclick=()=>go(x.dataset.tab));document.querySelectorAll('[data-go]').forEach(x=>x.onclick=()=>go(x.dataset.go));
@@ -14,7 +14,7 @@ async function search(popular=false,page=0){
  try{
   const r=await fetch('/api/'+provider+'/search?'+p),d=await r.json();
   if(requestId!==searchRequest)return;if(!r.ok)throw Error(d.error||'Falha na busca');
-  results=d.results||[];
+  results=d.results||[];searchTotal=Number(d.total)||0;
   if(!results.length){currentPage=previousPage;$('#results').innerHTML='<div class="empty">Não há mais resultados. Você chegou ao fim dos resultados disponíveis deste catálogo.</div>';renderPagination();return}
   $('#results').innerHTML=results.map((m,i)=>'<article class="result" data-open="'+i+'" role="button" tabindex="0"><img src="'+esc(m.icon_url||m.logo||'')+'" alt=""><div><h4>'+esc(m.title||m.name)+'</h4><p>'+esc(m.description||m.summary||'')+'</p></div><div class="result-foot"><span>'+Number(m.downloads||0).toLocaleString('pt-BR')+' downloads</span><button data-open="'+i+'" type="button">Escolher versão</button></div></article>').join('');
   document.querySelectorAll('[data-open]').forEach(b=>{const open=()=>openVersionPicker(results[Number(b.dataset.open)],provider,'download');b.onclick=e=>{e.stopPropagation();open()};if(b.tagName==='ARTICLE')b.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open()}}});
@@ -47,7 +47,7 @@ async function openVersionPicker(project,provider,mode='pack'){
    availableFiles=(d.files||[]).map(v=>({id:String(v.id),displayName:v.displayName,fileName:v.fileName,gameVersions:v.gameVersions||[],raw:v}));
   }
   const versions=[...new Set(availableFiles.flatMap(v=>v.game_versions||v.gameVersions||[]).filter(x=>/^\d+\.\d+(\.\d+)?$/.test(x)))].sort((a,b)=>b.localeCompare(a,undefined,{numeric:true}));
-  const loaders=[...new Set(availableFiles.flatMap(v=>v.loaders||v.gameVersions||[]).filter(x=>['fabric','forge','neoforge','quilt','liteloader','rift'].includes(String(x).toLowerCase())).map(x=>String(x).toLowerCase()))].sort();
+  const loaders=[...new Set(availableFiles.flatMap(v=>v.loaders||[]).filter(x=>['fabric','forge','neoforge','quilt','liteloader','rift'].includes(String(x).toLowerCase())).map(x=>String(x).toLowerCase()))].sort();
   fillOptions($('#modal-game-version'),versions,'Todas as versões');fillOptions($('#modal-loader'),loaders,'Todos os loaders');refreshFileOptions();
   if(!availableFiles.length)$('#modal-hint').textContent='Nenhuma versão foi encontrada para este projeto.';
  }catch(e){$('#modal-hint').textContent=e.message;$('#modal-file').innerHTML='<option value="">Indisponível</option>'}
