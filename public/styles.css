@@ -85,3 +85,7 @@
 :root[data-theme="light"] .crash-root,:root[data-theme="light"] .crash-mods{background:#f6faf7}
 
 .offline-account{margin-top:16px;padding:14px;border:1px solid var(--border);border-radius:14px;display:grid;gap:10px}.offline-account small{color:var(--muted)}.offline-mark{display:inline-flex;align-items:center;margin-left:5px;padding:2px 6px;border:1px solid var(--border);border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.04em;color:var(--muted)}
+
+
+/* Identificação da conta oficial do criador */
+.creator-mark{display:inline-flex;align-items:center;gap:3px;margin-left:5px;padding:2px 7px;border:1px solid rgba(52,211,153,.42);border-radius:999px;background:rgba(16,185,129,.12);color:#34d399;font-size:10px;font-weight:800;letter-spacing:.045em;vertical-align:middle}
