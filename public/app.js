@@ -198,6 +198,11 @@ function renderCommunityAccess(){
  $('#community-account-required').hidden=logged;
  $('#community-publish-card').hidden=!logged;
 }
+let communityEditingId=null,communityEditingToken=null;
+const communityOfflineTokensKey='mikael-community-edit-tokens';
+function communityOfflineTokens(){try{return JSON.parse(localStorage.getItem(communityOfflineTokensKey)||'{}')}catch{return {}}}
+function newCommunityToken(){const bytes=new Uint8Array(32);crypto.getRandomValues(bytes);return [...bytes].map(x=>x.toString(16).padStart(2,'0')).join('')}
+function resetCommunityEditor(){communityEditingId=null;communityEditingToken=null;$('#community-form').reset();const preview=$('#community-preview');preview.innerHTML='';delete preview.dataset.image;$('#community-submit').textContent='Publicar na comunidade';const cancel=$('#community-cancel-edit');if(cancel)cancel.hidden=true}
 async function loadCommunity(){
  const host=$('#community-list');if(!host)return;
  host.innerHTML='<div class="empty">Carregando publicações…</div>';
@@ -206,7 +211,8 @@ async function loadCommunity(){
   const data=await response.json();if(!response.ok)throw Error(data.error||'Falha ao carregar comunidade.');
   const packs=Array.isArray(data.packs)?data.packs:[];
   if(!packs.length){host.innerHTML='<div class="empty">Ainda não há modpacks publicados. Seja o primeiro a compartilhar!</div>';return}
-  host.innerHTML=packs.map(p=>'<article class="community-pack"><img src="'+esc(p.image)+'" alt="Capa do modpack '+esc(p.name)+'" loading="lazy"><div class="community-pack-info"><h3>'+esc(p.name)+'</h3><p>Minecraft '+esc(p.minecraft_version)+'</p><p>'+esc(p.description||'Sem descrição.')+'</p><small>Publicado por '+esc(p.author)+(p.offline?' <span class="offline-mark" title="Conta offline">◌ OFFLINE</span>':'')+' · '+esc(new Date(p.created_at).toLocaleDateString('pt-BR'))+'</small></div></article>').join('');
+  const tokens=communityOfflineTokens();
+  host.innerHTML=packs.map(p=>{const canEdit=Boolean((hubAccount&&!hubAccount.offline&&String(hubAccount.id)===String(p.user_id))||(p.offline&&tokens[p.id]));return '<article class="community-pack"><img src="'+esc(p.image)+'" alt="Capa do modpack '+esc(p.name)+'" loading="lazy"><div class="community-pack-info"><h3>'+esc(p.name)+'</h3><p>Minecraft '+esc(p.minecraft_version)+'</p><p>'+esc(p.description||'Sem descrição.')+'</p><small>Publicado por '+esc(p.author)+(p.offline?' <span class="offline-mark" title="Conta offline">◌ OFFLINE</span>':'')+' · '+esc(new Date(p.created_at).toLocaleDateString('pt-BR'))+'</small>'+(canEdit?'<button type="button" class="secondary community-edit" data-id="'+esc(p.id)+'">Editar modpack</button>':'')+'</div></article>'}).join('');
  }catch(error){host.innerHTML='<div class="empty">'+esc(error.message)+'</div>'}
 }
 function readAsDataUrl(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(new Error('Não foi possível ler a foto.'));reader.readAsDataURL(file)})}
@@ -243,13 +249,15 @@ $('#community-form').addEventListener('submit',async event=>{
  if(!image)return toast('Selecione uma foto de capa.');
  communityBusy=true;button.disabled=true;button.textContent='Publicando…';
  try{
-  const response=await fetch('/api/auth/community/packs',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({name,minecraft_version:version,description,image,...(hubAccount?.offline?{offline:true,offline_username:hubAccount.username||hubAccount.name}:{})})});
+  const response=await fetch('/api/auth/community/packs',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({name,minecraft_version:version,description,image,...(communityEditingId?{offline_edit_token:communityEditingToken||undefined}:hubAccount?.offline?{offline:true,offline_username:hubAccount.username||hubAccount.name,offline_edit_token:communityEditingToken}: {})})});
   const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||'Falha ao publicar.');
-  $('#community-form').reset();preview.innerHTML='';delete preview.dataset.image;
-  toast('Modpack publicado na comunidade!');await loadCommunity();
+  if(!communityEditingId&&offlineToken){const tokens=communityOfflineTokens();tokens[data.pack.id]=offlineToken;localStorage.setItem(communityOfflineTokensKey,JSON.stringify(tokens))}
+  resetCommunityEditor();toast(communityEditingId?'Modpack atualizado!':'Modpack publicado na comunidade!');await loadCommunity();
  }catch(error){toast(error.message)}
  finally{communityBusy=false;button.disabled=false;button.textContent='Publicar na comunidade'}
 });
+$('#community-list').addEventListener('click',event=>{const button=event.target.closest('.community-edit');if(!button)return;const id=button.dataset.id;fetch('/api/auth/community/packs',{credentials:'same-origin'}).then(r=>r.json()).then(data=>{const pack=(data.packs||[]).find(x=>String(x.id)===String(id));if(!pack)return toast('Publicação não encontrada.');communityEditingId=String(id);communityEditingToken=communityOfflineTokens()[id]||null;$('#community-name').value=pack.name;$('#community-version').value=pack.minecraft_version;$('#community-description').value=pack.description||'';const preview=$('#community-preview');preview.dataset.image=pack.image;preview.innerHTML='<img src="'+esc(pack.image)+'" alt="Capa atual">';$('#community-submit').textContent='Salvar alterações';const cancel=$('#community-cancel-edit');if(cancel)cancel.hidden=false;$('#community-publish-card').hidden=false;$('#community-name').scrollIntoView({behavior:'smooth',block:'center'})}).catch(()=>toast('Não foi possível abrir a publicação.'))});
+$('#community-cancel-edit')?.addEventListener('click',resetCommunityEditor);
 $('#community-refresh').onclick=loadCommunity;
 const previousGoForCommunity=go;
 go=function(id){previousGoForCommunity(id);if(id==='community'){renderCommunityAccess();if(!communityLoaded){communityLoaded=true;loadCommunity()}}};
