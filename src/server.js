@@ -132,7 +132,7 @@ app.post('/api/packs/create',async(req,res)=>{
   const fileName=clean(file.filename||file.fileName||file.name||('mod-'+id+'.jar'),180).replace(/[\\/\\\\]/g,'_');
   const url=file.url||file.downloadUrl;let safeUrl;try{safeUrl=new URL(url)}catch{}if(!safeUrl||safeUrl.protocol!=='https:')throw new Error('O provedor não forneceu um link HTTPS de download para '+fileName);
   const hashes=file.hashes||{};const fileHashes={};if(hashes.sha1||hashes.SHA1)fileHashes.sha1=hashes.sha1||hashes.SHA1;if(hashes.sha512||hashes.SHA512)fileHashes.sha512=hashes.sha512||hashes.SHA512;
-  const existing=files.find(x=>x.path==='mods/'+fileName);if(existing)return;
+  const existing=files.find(x=>x.path==='mods/'+fileName);if(existing){const prior=existing.downloads?.[0];if(prior===url)return;throw new Error('Dois mods usam o mesmo nome de arquivo ('+fileName+'). O pacote foi cancelado para evitar substituir um mod.');}
   files.push({path:'mods/'+fileName,hashes:fileHashes,downloads:[url],fileSize:Number(file.size||file.fileLength||0),env:{client:'required',server:'required'}});
  };
  const getMrVersion=async versionId=>getJson('https://api.modrinth.com/v2/version/'+encodeURIComponent(versionId),mrHeaders);
@@ -149,7 +149,7 @@ app.post('/api/packs/create',async(req,res)=>{
  const resolveCf=async(modId,fileId,depth=0)=>{
   if(depth>8||seen.has('cf:'+modId+':'+fileId))return;if(!cf)throw new Error('CurseForge precisa da chave API configurada no Render.');seen.add('cf:'+modId+':'+fileId);
   const data=await getJson('https://api.curseforge.com/v1/mods/'+modId+'/files/'+fileId,cf);const f=data.data;
-  if(!(f.gameVersions||[]).includes(gameVersion))throw new Error('Versão Minecraft incompatível: '+(f.displayName||f.fileName));
+  if(!(f.gameVersions||[]).includes(gameVersion))throw new Error('Versão Minecraft incompatível: '+(f.displayName||f.fileName));const expectedLoader={forge:1,fabric:4,quilt:5,neoforge:6}[loader];if(expectedLoader&&Number(f.modLoader)!==expectedLoader)throw new Error('Modloader incompatível no arquivo '+(f.displayName||f.fileName)+'. Esperado: '+loader+'.');
 
   let url=f.downloadUrl;if(!url){const d=await getJson('https://api.curseforge.com/v1/mods/'+modId+'/files/'+fileId+'/download-url',cf);url=d.data}
   addFile({fileName:f.fileName,downloadUrl:url,hashes:{sha1:(f.hashes||[]).find(x=>x.algo===1)?.value},fileLength:f.fileLength},'curseforge',modId);
