@@ -8,6 +8,12 @@ const { Pool } = pg;
 let pool;
 let schemaPromise;
 
+async function dbQuery(...args) {
+  const db = database();
+  if (schemaPromise) await schemaPromise;
+  return db.query(...args);
+}
+
 function database() {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL não configurada no servidor.');
   if (!pool) pool = new Pool({
@@ -95,7 +101,7 @@ export function createAuthRouter() {
     const token = readCookie(req);
     if (!/^[a-f0-9]{64}$/.test(token)) return null;
     if (schemaPromise) await schemaPromise;
-    const result = await database().query(
+    const result = await dbQuery(
       'SELECT u.id,u.display_name,u.email,u.created_at FROM hub_sessions s JOIN hub_users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>NOW()',
       [hashToken(token)]
     );
@@ -116,12 +122,12 @@ export function createAuthRouter() {
       if (password.length < 10 || password.length > 72)
         return res.status(400).json({ error: 'A senha deve ter entre 10 e 72 caracteres.' });
       const passwordHash = await bcrypt.hash(password, 12);
-      const result = await database().query(
+      const result = await dbQuery(
         'INSERT INTO hub_users(display_name,email,password_hash) VALUES($1,$2,$3) RETURNING id,display_name,email,created_at',
         [name, email, passwordHash]
       );
       const token = crypto.randomBytes(32).toString('hex');
-      await database().query("INSERT INTO hub_sessions(token_hash,user_id,expires_at) VALUES($1,$2,NOW()+INTERVAL '14 days')", [hashToken(token), result.rows[0].id]);
+      await dbQuery("INSERT INTO hub_sessions(token_hash,user_id,expires_at) VALUES($1,$2,NOW()+INTERVAL '14 days')", [hashToken(token), result.rows[0].id]);
       setSessionCookie(res, token);
       res.status(201).json({ user: publicUser(result.rows[0]) });
     } catch (error) {
@@ -137,12 +143,12 @@ export function createAuthRouter() {
       const password = String(req.body?.password || '');
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || password.length < 1 || password.length > 72)
         return res.status(400).json({ error: 'Informe e-mail e senha válidos.' });
-      const result = await database().query('SELECT * FROM hub_users WHERE email=$1', [email]);
+      const result = await dbQuery('SELECT * FROM hub_users WHERE email=$1', [email]);
       const row = result.rows[0];
       if (!row || !(await bcrypt.compare(password, row.password_hash)))
         return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
       const token = crypto.randomBytes(32).toString('hex');
-      await database().query("INSERT INTO hub_sessions(token_hash,user_id,expires_at) VALUES($1,$2,NOW()+INTERVAL '14 days')", [hashToken(token), row.id]);
+      await dbQuery("INSERT INTO hub_sessions(token_hash,user_id,expires_at) VALUES($1,$2,NOW()+INTERVAL '14 days')", [hashToken(token), row.id]);
       setSessionCookie(res, token);
       res.json({ user: publicUser(row) });
     } catch (error) {
@@ -155,7 +161,7 @@ export function createAuthRouter() {
   router.post('/logout', async (req, res) => {
     try {
       const token = readCookie(req);
-      if (/^[a-f0-9]{64}$/.test(token)) await database().query('DELETE FROM hub_sessions WHERE token_hash=$1', [hashToken(token)]);
+      if (/^[a-f0-9]{64}$/.test(token)) await dbQuery('DELETE FROM hub_sessions WHERE token_hash=$1', [hashToken(token)]);
       clearSessionCookie(res);
       res.json({ ok: true });
     } catch (error) {
@@ -167,7 +173,7 @@ export function createAuthRouter() {
   // Public catalog; publishing is restricted to authenticated accounts.
   router.get('/community/packs', async (req, res) => {
     try {
-      const result = await database().query(
+      const result = await dbQuery(
         'SELECT p.id,p.pack_name,p.minecraft_version,p.description,p.image_data,p.created_at,u.display_name FROM hub_community_packs p JOIN hub_users u ON u.id=p.user_id ORDER BY p.created_at DESC LIMIT 100'
       );
       res.json({ packs: result.rows.map(row => ({
@@ -193,7 +199,7 @@ export function createAuthRouter() {
     if (!imageBytes.length || imageBytes.length > 1024 * 1024)
       return res.status(413).json({ error: 'A foto deve ter no máximo 1 MB.' });
     try {
-      const result = await database().query(
+      const result = await dbQuery(
         'INSERT INTO hub_community_packs(user_id,pack_name,minecraft_version,description,image_data) VALUES($1,$2,$3,$4,$5) RETURNING id,pack_name,minecraft_version,description,image_data,created_at',
         [req.hubUser.id, name, version, description, image]
       );
@@ -211,7 +217,7 @@ export function createAuthRouter() {
     if (!req.hubUser) return res.status(401).json({ error: 'Entre na sua conta.' });
     if (!/^\\d+$/.test(req.params.id)) return res.status(400).json({ error: 'ID inválido.' });
     try {
-      const result = await database().query('DELETE FROM hub_community_packs WHERE id=$1 AND user_id=$2 RETURNING id', [req.params.id, req.hubUser.id]);
+      const result = await dbQuery('DELETE FROM hub_community_packs WHERE id=$1 AND user_id=$2 RETURNING id', [req.params.id, req.hubUser.id]);
       if (!result.rowCount) return res.status(404).json({ error: 'Publicação não encontrada ou não pertence à sua conta.' });
       res.json({ ok: true });
     } catch (error) {
@@ -223,7 +229,7 @@ export function createAuthRouter() {
   router.get('/library', async (req, res) => {
     if (!req.hubUser) return res.status(401).json({ error: 'Entre na sua conta para acessar a biblioteca sincronizada.' });
     try {
-      const result = await database().query('SELECT packs FROM hub_libraries WHERE user_id=$1', [req.hubUser.id]);
+      const result = await dbQuery('SELECT packs FROM hub_libraries WHERE user_id=$1', [req.hubUser.id]);
       res.json({ packs: result.rows[0]?.packs || [] });
     } catch (error) {
       console.error('Library read:', error.message);
@@ -238,7 +244,7 @@ export function createAuthRouter() {
     try { bytes = Buffer.byteLength(JSON.stringify(packs)); } catch { return res.status(400).json({ error: 'Formato da biblioteca inválido.' }); }
     if (bytes > 500000) return res.status(413).json({ error: 'A biblioteca ultrapassa o limite de 500 KB.' });
     try {
-      await database().query(
+      await dbQuery(
         'INSERT INTO hub_libraries(user_id,packs,updated_at) VALUES($1,$2::jsonb,NOW()) ON CONFLICT(user_id) DO UPDATE SET packs=EXCLUDED.packs,updated_at=NOW()',
         [req.hubUser.id, JSON.stringify(packs)]
       );
