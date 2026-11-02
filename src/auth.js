@@ -62,6 +62,7 @@ function database() {
     ALTER TABLE hub_community_packs ALTER COLUMN user_id DROP NOT NULL;
     ALTER TABLE hub_community_packs ADD COLUMN IF NOT EXISTS author_name VARCHAR(20);
     ALTER TABLE hub_community_packs ADD COLUMN IF NOT EXISTS is_offline BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE hub_community_packs ADD COLUMN IF NOT EXISTS offline_edit_hash TEXT;
     UPDATE hub_community_packs p SET author_name=u.display_name FROM hub_users u WHERE p.user_id=u.id AND (p.author_name IS NULL OR p.author_name='');
     CREATE INDEX IF NOT EXISTS hub_community_created_idx ON hub_community_packs(created_at DESC);
   `).catch(error => { schemaPromise = null; throw error; });
@@ -222,8 +223,8 @@ export function createAuthRouter() {
       return res.status(413).json({ error: 'A foto deve ter no máximo 1 MB.' });
     try {
       const result = await dbQuery(
-        'INSERT INTO hub_community_packs(user_id,author_name,is_offline,pack_name,minecraft_version,description,image_data) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,pack_name,minecraft_version,description,image_data,created_at',
-        [offline ? null : req.hubUser.id, authorName, offline, name, version, description, image]
+        'INSERT INTO hub_community_packs(user_id,author_name,is_offline,offline_edit_hash,pack_name,minecraft_version,description,image_data) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,pack_name,minecraft_version,description,image_data,created_at',
+        [offline ? null : req.hubUser.id, authorName, offline, offline ? (typeof req.body?.offline_edit_token === 'string' && req.body.offline_edit_token.length >= 32 ? crypto.createHash('sha256').update(req.body.offline_edit_token).digest('hex') : null) : null, name, version, description, image]
       );
       const row = result.rows[0];
       res.status(201).json({ pack: {
@@ -233,6 +234,39 @@ export function createAuthRouter() {
     } catch (error) {
       console.error('Community publish:', error.message);
       res.status(503).json({ error: 'Não foi possível publicar agora.' });
+    }
+  });
+  router.patch('/community/packs/:id', async (req, res) => {
+    if (!/^[0-9]+$/.test(req.params.id)) return res.status(400).json({ error: 'ID inválido.' });
+    const name = String(req.body?.name || '').trim().slice(0, 80);
+    const version = String(req.body?.minecraft_version || '').trim();
+    const description = String(req.body?.description || '').trim().slice(0, 500);
+    const image = String(req.body?.image || '');
+    if (name.length < 3 || !/^[0-9]+[.][0-9]+([.][0-9]+)?$/.test(version)) return res.status(400).json({ error: 'Informe nome e versão Minecraft válidos.' });
+    let imageValue = null;
+    if (image) {
+      const comma = image.indexOf(',');
+      const header = comma >= 0 ? image.slice(0, comma) : '';
+      const encoded = comma >= 0 ? image.slice(comma + 1) : '';
+      if (!['data:image/png;base64', 'data:image/jpeg;base64', 'data:image/webp;base64'].includes(header) || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) return res.status(400).json({ error: 'Imagem inválida.' });
+      imageValue = Buffer.from(encoded, 'base64');
+      if (!imageValue.length || imageValue.length > 1024 * 1024) return res.status(413).json({ error: 'A foto deve ter no máximo 1 MB.' });
+    }
+    const offlineToken = typeof req.body?.offline_edit_token === 'string' ? req.body.offline_edit_token : '';
+    const tokenHash = offlineToken.length >= 32 ? crypto.createHash('sha256').update(offlineToken).digest('hex') : '';
+    try {
+      const result = await dbQuery(
+        `UPDATE hub_community_packs SET pack_name=$1,minecraft_version=$2,description=$3,image_data=COALESCE($4,image_data),updated_at=NOW()
+         WHERE id=$5 AND ((user_id IS NOT NULL AND user_id=$6) OR (is_offline=TRUE AND offline_edit_hash IS NOT NULL AND offline_edit_hash=$7))
+         RETURNING id,pack_name,minecraft_version,description,image_data,author_name,is_offline,created_at,updated_at`,
+        [name, version, description, imageValue ? image : null, req.params.id, req.hubUser?.id || null, tokenHash]
+      );
+      if (!result.rowCount) return res.status(404).json({ error: 'Publicação não encontrada ou você não tem permissão para editá-la.' });
+      const row = result.rows[0];
+      res.json({ pack: { id:String(row.id),name:row.pack_name,minecraft_version:row.minecraft_version,description:row.description,image:row.image_data,author:row.author_name,offline:row.is_offline,created_at:row.created_at,updated_at:row.updated_at } });
+    } catch (error) {
+      console.error('Community update:', error.message);
+      res.status(503).json({ error: 'Não foi possível atualizar a publicação.' });
     }
   });
   router.delete('/community/packs/:id', async (req, res) => {
