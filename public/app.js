@@ -75,7 +75,15 @@ async function openVersionPicker(project,provider,mode='pack'){
   }
   const versions=[...new Set(availableFiles.flatMap(v=>v.game_versions||v.gameVersions||[]).filter(x=>/^\d+\.\d+(\.\d+)?$/.test(x)))].sort((a,b)=>b.localeCompare(a,undefined,{numeric:true}));
   const loaders=[...new Set(availableFiles.flatMap(v=>v.loaders||[]).filter(x=>['fabric','forge','neoforge','quilt','liteloader','rift'].includes(String(x).toLowerCase())).map(x=>String(x).toLowerCase()))].sort();
-  fillOptions($('#modal-game-version'),versions,'Todas as versões');fillOptions($('#modal-loader'),loaders,'Todos os loaders');refreshFileOptions();
+  fillOptions($('#modal-game-version'),versions,'Todas as versões');fillOptions($('#modal-loader'),loaders,'Todos os loaders');
+  const filterGameVersion=modalPackConfig?.minecraft_version||$('#game-version').value.trim();
+  const filterLoader=modalPackConfig?(modalPackConfig.loader==='vanilla'?'':modalPackConfig.loader):$('#loader').value;
+  if(filterGameVersion&&versions.includes(filterGameVersion))$('#modal-game-version').value=filterGameVersion;
+  if(filterLoader&&loaders.includes(filterLoader.toLowerCase()))$('#modal-loader').value=filterLoader.toLowerCase();
+  refreshFileOptions();
+  const hasActiveFilter=Boolean($('#modal-game-version').value||$('#modal-loader').value);
+  const firstCompatibleFile=$('#modal-file').options[1];
+  if(hasActiveFilter&&firstCompatibleFile){$('#modal-file').value=firstCompatibleFile.value;$('#modal-add').disabled=false;$('#modal-hint').textContent='Filtros aplicados e versão compatível selecionada automaticamente. Confira a versão antes de baixar.'}
   if(!availableFiles.length)$('#modal-hint').textContent='Nenhuma versão foi encontrada para este projeto.';
  }catch(e){$('#modal-hint').textContent=e.message;$('#modal-file').innerHTML='<option value="">Indisponível</option>'}
 }
