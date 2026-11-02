@@ -63,6 +63,7 @@ function database() {
     ALTER TABLE hub_community_packs ADD COLUMN IF NOT EXISTS author_name VARCHAR(20);
     ALTER TABLE hub_community_packs ADD COLUMN IF NOT EXISTS is_offline BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE hub_community_packs ADD COLUMN IF NOT EXISTS offline_edit_hash TEXT;
+    ALTER TABLE hub_community_packs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
     UPDATE hub_community_packs p SET author_name=u.display_name FROM hub_users u WHERE p.user_id=u.id AND (p.author_name IS NULL OR p.author_name='');
     CREATE INDEX IF NOT EXISTS hub_community_created_idx ON hub_community_packs(created_at DESC);
   `).catch(error => { schemaPromise = null; throw error; });
