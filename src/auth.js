@@ -176,6 +176,24 @@ export function createAuthRouter() {
   });
 
   router.get('/me', (req, res) => res.json({ user: req.hubUser ? publicUser(req.hubUser) : null }));
+  router.patch('/profile/username', async (req, res) => {
+    if (!req.hubUser) return res.status(401).json({ error: 'Entre na sua conta para alterar o nome.' });
+    const username = String(req.body?.username || '').trim().toLowerCase();
+    if (!/^[a-z0-9_]{3,20}$/.test(username)) return res.status(400).json({ error: 'Use 3 a 20 caracteres: letras, números e _.' });
+    try {
+      const result = await dbQuery(
+        'UPDATE hub_users SET username=$1, display_name=$1 WHERE id=$2 RETURNING id,display_name,username,email,created_at',
+        [username, req.hubUser.id]
+      );
+      await dbQuery('UPDATE hub_community_packs SET author_name=$1 WHERE user_id=$2', [username, req.hubUser.id]);
+      res.json({ user: publicUser(result.rows[0]) });
+    } catch (error) {
+      if (error.code === '23505') return res.status(409).json({ error: 'Esse nome já está em uso. Escolha outro.' });
+      console.error('Username update:', error.message);
+      res.status(503).json({ error: 'Não foi possível alterar o nome agora.' });
+    }
+  });
+
   router.post('/logout', async (req, res) => {
     try {
       const token = readCookie(req);
