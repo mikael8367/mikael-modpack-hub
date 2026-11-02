@@ -192,11 +192,11 @@ export function createAuthRouter() {
   router.get('/community/packs', async (req, res) => {
     try {
       const result = await dbQuery(
-        'SELECT p.id,p.pack_name,p.minecraft_version,p.description,p.image_data,p.created_at,COALESCE(p.author_name,u.display_name,\'Usuário\') AS author_name,p.is_offline FROM hub_community_packs p LEFT JOIN hub_users u ON u.id=p.user_id ORDER BY p.created_at DESC LIMIT 100'
+        'SELECT p.id,p.pack_name,p.minecraft_version,p.description,p.image_data,p.created_at,p.user_id,COALESCE(p.author_name,u.display_name,\'Usuário\') AS author_name,p.is_offline FROM hub_community_packs p LEFT JOIN hub_users u ON u.id=p.user_id ORDER BY p.created_at DESC LIMIT 100'
       );
       res.json({ packs: result.rows.map(row => ({
         id: String(row.id), name: row.pack_name, minecraft_version: row.minecraft_version,
-        description: row.description, image: row.image_data, author: row.author_name, offline: row.is_offline, created_at: row.created_at
+        description: row.description, image: row.image_data, author: row.author_name, offline: row.is_offline, user_id: row.user_id ? String(row.user_id) : null, created_at: row.created_at
       })) });
     } catch (error) {
       console.error('Community list:', error.message);
