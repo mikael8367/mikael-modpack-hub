@@ -351,23 +351,37 @@ $('#crash-analyze').onclick=async()=>{
  const files=[...(crashFiles.files||[])],button=$('#crash-analyze'),report=$('#crash-report'),content=$('#crash-report-content');
  if(!files.length)return toast('Selecione pelo menos um arquivo TXT, LOG ou PDF.');
  if(files.length>3)return toast('Selecione no máximo 3 arquivos por análise.');
- button.disabled=true;button.textContent='Lendo e analisando…';report.hidden=false;content.innerHTML='<p class="hint">Analisando os arquivos neste aparelho…</p>';
+ if(files.some(f=>f.size===0))return toast('Um dos arquivos está vazio.');
+ button.disabled=true;button.textContent='Lendo e analisando…';report.hidden=false;content.innerHTML='<p class="hint">Analisando a sequência dos erros…</p>';
  try{
   const results=[];
   for(const file of files){const text=await extractCrashFile(file);results.push({name:file.name,...diagnoseCrash(text)})}
-  const total=results.reduce((n,r)=>n+r.found.length,0);
-  let output='ANÁLISE DE CRASH — MODPACK HUB\nArquivos: '+results.length+'\n\n';
-  for(const r of results){output+='ARQUIVO: '+r.name+'\nLinhas extraídas: '+r.lines+'\n';
-   if(!r.found.length)output+='Nenhum padrão conhecido de erro foi identificado. Isso não garante que o log esteja livre de problemas.\n';
-   for(const item of r.found)output+='['+item.level.toUpperCase()+'] '+item.name+'\nPossível causa: '+item.why+'\nSugestão: '+item.fix+'\n';
-   if(r.important.length)output+='Trechos importantes:\n'+r.important.map(x=>'• '+x.slice(0,500)).join('\n')+'\n';
+  const total=results.reduce((n,r)=>n+r.findings.length,0);
+  let output='ANÁLISE AVANÇADA DE CRASH — MODPACK HUB\nArquivos: '+results.length+'\n\n';
+  for(const r of results){
+   output+='ARQUIVO: '+r.name+'\nLinhas: '+r.lineCount+'\n';
+   if(Object.keys(r.metadata).length)output+='AMBIENTE: '+Object.entries(r.metadata).map(([k,v])=>k+': '+v).join(' | ')+'\n';
+   if(r.rootCause)output+='CAUSA MAIS PROFUNDA ENCONTRADA (verifique o contexto):\n'+r.rootCause.text+'\n';
+   if(r.findings.length){
+    output+='POSSÍVEIS PROBLEMAS:\n';
+    for(const item of r.findings)output+='['+item.level.toUpperCase()+'] '+item.name+' ('+item.count+' ocorrência(s), linha '+item.firstLine+')\n'+item.why+'\nAção sugerida: '+item.fix+'\nTrecho: '+item.snippet+'\n\n';
+   }else output+='Nenhum padrão conhecido foi identificado. Isso não significa que o log esteja livre de erros.\n';
+   if(r.mods.length)output+='MODS/ARQUIVOS CITADOS: '+r.mods.map(m=>m.name+(m.count>1?' ('+m.count+'x)':'')).join(', ')+'\n';
+   if(r.important.length)output+='LINHAS IMPORTANTES:\n'+r.important.map(x=>'• '+x.slice(0,450)).join('\n')+'\n';
    output+='\n';
   }
-  output+='\nObservação: diagnóstico automático por padrões. Confirme a causa com o log completo e as versões dos mods.';
+  output+='LIMITAÇÃO: diagnóstico heurístico. A causa mais profunda nem sempre é a causa original; compare os arquivos e o stack trace completo antes de alterar o modpack.';
   crashReportText=output;
-  content.innerHTML=results.map(r=>'<article class="crash-result"><h3>'+esc(r.name)+'</h3><p>'+r.lines+' linhas analisadas</p>'+(r.found.length?r.found.map(x=>'<div class="crash-finding"><b>'+esc(x.name)+'</b><p>'+esc(x.why)+'</p><small>Sugestão: '+esc(x.fix)+'</small></div>').join(''):'<p class="hint">Nenhum erro conhecido identificado.</p>')+(r.important.length?'<details><summary>Ver trechos importantes do log</summary><pre>'+esc(r.important.join('\n'))+'</pre></details>':'')+'</article>').join('')+'<p class="hint">A análise é indicativa e pode não encontrar erros novos ou específicos.</p>';
-  toast(total?total+' tipo(s) de erro encontrados.':'Análise concluída.');
+  content.innerHTML=results.map(r=>{
+   const meta=Object.entries(r.metadata).map(([k,v])=>'<span class="crash-chip">'+esc(k)+': '+esc(v)+'</span>').join('');
+   const cause=r.rootCause?'<div class="crash-root"><b>Possível causa raiz</b><pre>'+esc(r.rootCause.text)+'</pre></div>':'';
+   const findings=r.findings.length?r.findings.map(x=>'<div class="crash-finding"><div class="crash-finding-head"><b>'+esc(x.name)+'</b><span class="crash-severity '+esc(x.level)+'">'+esc(x.level==='critical'?'Crítico':x.level==='error'?'Erro':x.level==='warning'?'Atenção':'Info')+'</span></div><p>'+esc(x.why)+'</p><small>'+esc(x.fix)+'</small><details><summary>Ver evidência · linha '+x.firstLine+' · '+x.count+' ocorrência(s)</summary><pre>'+esc(x.snippet)+'</pre></details></div>').join(''):'<p class="hint">Nenhum padrão conhecido identificado. Confira manualmente as últimas linhas do log.</p>';
+   const mods=r.mods.length?'<div class="crash-mods"><b>Mods/arquivos citados</b><p>'+r.mods.map(m=>esc(m.name)).join(' · ')+'</p><small>São referências encontradas no texto, não uma confirmação de culpa.</small></div>':'';
+   const important=r.important.length?'<details><summary>Ver stack trace e mensagens importantes</summary><pre>'+esc(r.important.join('\n'))+'</pre></details>':'';
+   return '<article class="crash-result"><h3>'+esc(r.name)+'</h3><p>'+r.lineCount+' linhas · '+r.characterCount.toLocaleString('pt-BR')+' caracteres</p>'+(meta?'<div class="crash-meta">'+meta+'</div>':'')+cause+findings+mods+important+'</article>';
+  }).join('')+'<p class="hint">A análise identifica padrões e evidências. Ela não executa os mods nem garante determinar sozinha o culpado.</p>';
+  toast(total?total+' categoria(s) de problema encontradas.':'Análise concluída.');
  }catch(error){content.innerHTML='<p class="hint">'+esc(error.message)+'</p>';crashReportText='Falha na análise: '+error.message;toast(error.message)}
  finally{button.disabled=false;button.textContent='Analisar arquivos'}
 };
-$('#crash-copy').onclick=()=>{if(!crashReportText)return toast('Nenhum relatório disponível.');navigator.clipboard?.writeText(crashReportText).then(()=>toast('Relatório copiado.')).catch(()=>toast('Não foi possível copiar automaticamente.'))};
+$('#crash-copy').onclick=async()=>{if(!crashReportText)return toast('Nenhum relatório disponível.');try{if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(crashReportText);else{const area=document.createElement('textarea');area.value=crashReportText;document.body.appendChild(area);area.select();document.execCommand('copy');area.remove()}toast('Relatório copiado.')}catch{toast('Não foi possível copiar automaticamente.')}};
