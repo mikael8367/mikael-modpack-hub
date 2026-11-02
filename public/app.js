@@ -25,8 +25,8 @@ $('#tutorial-next').onclick=()=>{if(tutorialIndex<tutorialSteps.length-1){tutori
 $('#tutorial-skip').onclick=closeTutorial;
 $('#tutorial-replay').onclick=openTutorial;
 if(!localStorage.getItem('modpack-hub-tutorial-v1'))openTutorial();
-let popularLoaded=false;function go(id){document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===id));window.scrollTo({top:0,behavior:'smooth'});if(id==='search'&&!popularLoaded){popularLoaded=true;search(true)}}
-document.querySelectorAll('[data-tab]').forEach(x=>x.onclick=()=>go(x.dataset.tab));document.querySelectorAll('[data-go]').forEach(x=>x.onclick=()=>go(x.dataset.go));if(document.querySelector('.page.active')?.id==='search'&&!popularLoaded){popularLoaded=true;search(true)}
+let popularLoaded=false;function go(id){document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===id));window.scrollTo({top:0,behavior:'smooth'});if(id==='search'&&!popularLoaded)search(true)}
+document.querySelectorAll('[data-tab]').forEach(x=>x.onclick=()=>go(x.dataset.tab));document.querySelectorAll('[data-go]').forEach(x=>x.onclick=()=>go(x.dataset.go));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function status(){try{const d=await(await fetch('/health')).json();$('#status').textContent=d.ok?'API online':'Indisponível';$('#mr-state').textContent='API pública disponível';$('#cf-state').textContent=d.providers.curseforge?'Chave configurada':'Chave não configurada';$('#settings-cf').textContent=d.providers.curseforge?'Configurado no servidor':'Adicione CURSEFORGE_API_KEY no Render';}catch{$('#status').textContent='Sem conexão'}}
 let catalogType='mods';
@@ -39,13 +39,14 @@ async function search(popular=false,page=0){
  $('#results').innerHTML='<div class="empty">'+(popular?'Carregando mods populares…':'Pesquisando…')+'</div>';
  try{
   const r=await fetch('/api/'+provider+'/search?'+p),d=await r.json();
-  if(requestId!==searchRequest)return;if(!r.ok)throw Error(d.error||'Falha na busca');
-  results=d.results||[];searchTotal=Number(d.total)||0;if(sort==='downloads_asc'||sort==='date_asc')results.reverse();
+  if(requestId!==searchRequest)return false;if(!r.ok)throw Error(d.error||'Falha na busca');
+  if(!q)popularLoaded=true;results=d.results||[];searchTotal=Number(d.total)||0;if(sort==='downloads_asc'||sort==='date_asc')results.reverse();
   if(!results.length){currentPage=previousPage;$('#results').innerHTML='<div class="empty">Não há mais resultados. Você chegou ao fim dos resultados disponíveis deste catálogo.</div>';renderPagination();return}
   $('#results').innerHTML=results.map((m,i)=>'<article class="result" data-open="'+i+'" role="button" tabindex="0"><img src="'+esc(m.icon_url||m.logo||'')+'" alt=""><div><h4>'+esc(m.title||m.name)+'</h4><p>'+esc(m.description||m.summary||'')+'</p></div><div class="result-foot"><span>'+Number(m.downloads||0).toLocaleString('pt-BR')+' downloads</span><button data-open="'+i+'" type="button">Escolher versão</button></div></article>').join('');
   document.querySelectorAll('[data-open]').forEach(b=>{const open=()=>openVersionPicker(results[Number(b.dataset.open)],provider,'download');b.onclick=e=>{e.stopPropagation();open()};if(b.tagName==='ARTICLE')b.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open()}}});
   renderPagination();
- }catch(e){if(requestId!==searchRequest)return;currentPage=previousPage;$('#results').innerHTML='<div class="empty">'+esc(e.message)+'</div>';renderPagination()}
+ }catch(e){if(requestId!==searchRequest)return false;if(!q)popularLoaded=false;currentPage=previousPage;$('#results').innerHTML='<div class="empty">'+esc(e.message)+'<br><button id="retry-popular" class="secondary" type="button">Tentar novamente</button></div>';const retry=$('#retry-popular');if(retry)retry.onclick=()=>search(true,0);renderPagination();return false}
+ return true;
 }
 function renderPagination(){const el=$('#pagination');if(!el)return;el.innerHTML='<button id="page-prev" '+(currentPage===0?'disabled':'')+'>‹ Anterior</button><span>Página '+(currentPage+1)+'</span><button id="page-next" '+((currentPage+1)*PAGE_SIZE>=searchTotal?'disabled':'')+'>Próxima ›</button>';$('#page-prev').onclick=()=>search(false,currentPage-1);$('#page-next').onclick=()=>search(false,currentPage+1)}
 let modalProject=null,modalProvider=null,modalMode='pack',modalPackConfig=null,availableFiles=[];
