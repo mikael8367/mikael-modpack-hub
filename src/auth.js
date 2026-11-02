@@ -166,7 +166,7 @@ export function createAuthRouter() {
       if (!row || !(await bcrypt.compare(password, row.password_hash)))
         return res.status(401).json({ error: 'Nome de usuário ou senha incorretos.' });
       const token = crypto.randomBytes(32).toString('hex');
-      await dbQuery("INSERT INTO hub_sessions(token_hash,user_id,expires_at) VALUES($1,$2,NOW()+INTERVAL '14 days')", [hashToken(token), row.id]);
+      await dbQuery("INSERT INTO hub_sessions(token_hash,user_id,expires_at) VALUES($1,$2,NOW()+INTERVAL '30 days')", [hashToken(token), row.id]);
       setSessionCookie(res, token);
       res.json({ user: publicUser(row) });
     } catch (error) {
