@@ -68,3 +68,18 @@
 .bottom{justify-content:flex-start;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}
 .bottom::-webkit-scrollbar{display:none}
 .bottom .tab{flex:0 0 68px}
+
+/* Relatório avançado de crash */
+.crash-meta{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.crash-chip{display:inline-block;padding:5px 8px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:10px;overflow-wrap:anywhere}
+.crash-root,.crash-mods{margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.crash-root>b,.crash-mods>b{font-size:12px;color:var(--lime)}
+.crash-root pre,.crash-finding pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto;font-size:10px;line-height:1.5;color:var(--muted);background:var(--bg);padding:10px;border-radius:9px}
+.crash-finding-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.crash-severity{font-size:9px;font-weight:800;padding:4px 7px;border-radius:7px;background:#26352c;color:#b8d8c4}
+.crash-severity.critical,.crash-severity.error{background:#482521;color:#ffb7a9}
+.crash-severity.warning{background:#493a1d;color:#ffdc91}
+.crash-severity.info{background:#203a4a;color:#a9d9f5}
+.crash-mods p{font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.crash-mods small{font-size:10px;color:var(--muted)}
+:root[data-theme="light"] .crash-root,:root[data-theme="light"] .crash-mods{background:#f6faf7}
