@@ -50,13 +50,19 @@ function database() {
     );
     CREATE TABLE IF NOT EXISTS hub_community_packs (
       id BIGSERIAL PRIMARY KEY,
-      user_id BIGINT NOT NULL REFERENCES hub_users(id) ON DELETE CASCADE,
+      user_id BIGINT REFERENCES hub_users(id) ON DELETE CASCADE,
+      author_name VARCHAR(20),
+      is_offline BOOLEAN NOT NULL DEFAULT FALSE,
       pack_name VARCHAR(80) NOT NULL,
       minecraft_version VARCHAR(20) NOT NULL,
       description VARCHAR(500) NOT NULL DEFAULT '',
       image_data TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE hub_community_packs ALTER COLUMN user_id DROP NOT NULL;
+    ALTER TABLE hub_community_packs ADD COLUMN IF NOT EXISTS author_name VARCHAR(20);
+    ALTER TABLE hub_community_packs ADD COLUMN IF NOT EXISTS is_offline BOOLEAN NOT NULL DEFAULT FALSE;
+    UPDATE hub_community_packs p SET author_name=u.display_name FROM hub_users u WHERE p.user_id=u.id AND (p.author_name IS NULL OR p.author_name='');
     CREATE INDEX IF NOT EXISTS hub_community_created_idx ON hub_community_packs(created_at DESC);
   `).catch(error => { schemaPromise = null; throw error; });
   return pool;
@@ -184,11 +190,11 @@ export function createAuthRouter() {
   router.get('/community/packs', async (req, res) => {
     try {
       const result = await dbQuery(
-        'SELECT p.id,p.pack_name,p.minecraft_version,p.description,p.image_data,p.created_at,u.display_name FROM hub_community_packs p JOIN hub_users u ON u.id=p.user_id ORDER BY p.created_at DESC LIMIT 100'
+        'SELECT p.id,p.pack_name,p.minecraft_version,p.description,p.image_data,p.created_at,COALESCE(p.author_name,u.display_name,\'Usuário\') AS author_name,p.is_offline FROM hub_community_packs p LEFT JOIN hub_users u ON u.id=p.user_id ORDER BY p.created_at DESC LIMIT 100'
       );
       res.json({ packs: result.rows.map(row => ({
         id: String(row.id), name: row.pack_name, minecraft_version: row.minecraft_version,
-        description: row.description, image: row.image_data, author: row.display_name, created_at: row.created_at
+        description: row.description, image: row.image_data, author: row.author_name, offline: row.is_offline, created_at: row.created_at
       })) });
     } catch (error) {
       console.error('Community list:', error.message);
@@ -196,7 +202,10 @@ export function createAuthRouter() {
     }
   });
   router.post('/community/packs', async (req, res) => {
-    if (!req.hubUser) return res.status(401).json({ error: 'Entre na sua conta para publicar um modpack.' });
+    const offline = !req.hubUser;
+    const offlineName = String(req.body?.offline_username || '').trim().toLowerCase();
+    if (offline && (!req.body?.offline || !/^[a-z0-9_]{3,20}$/.test(offlineName))) return res.status(401).json({ error: 'Entre em uma conta ou informe um nome offline válido.' });
+    const authorName = offline ? offlineName : req.hubUser.username;
     const name = String(req.body?.name || '').trim().slice(0, 80);
     const version = String(req.body?.minecraft_version || '').trim();
     const description = String(req.body?.description || '').trim().slice(0, 500);
@@ -213,13 +222,13 @@ export function createAuthRouter() {
       return res.status(413).json({ error: 'A foto deve ter no máximo 1 MB.' });
     try {
       const result = await dbQuery(
-        'INSERT INTO hub_community_packs(user_id,pack_name,minecraft_version,description,image_data) VALUES($1,$2,$3,$4,$5) RETURNING id,pack_name,minecraft_version,description,image_data,created_at',
-        [req.hubUser.id, name, version, description, image]
+        'INSERT INTO hub_community_packs(user_id,author_name,is_offline,pack_name,minecraft_version,description,image_data) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,pack_name,minecraft_version,description,image_data,created_at',
+        [offline ? null : req.hubUser.id, authorName, offline, name, version, description, image]
       );
       const row = result.rows[0];
       res.status(201).json({ pack: {
         id: String(row.id), name: row.pack_name, minecraft_version: row.minecraft_version,
-        description: row.description, image: row.image_data, author: req.hubUser.display_name, created_at: row.created_at
+        description: row.description, image: row.image_data, author: authorName, offline, created_at: row.created_at
       } });
     } catch (error) {
       console.error('Community publish:', error.message);
