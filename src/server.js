@@ -158,9 +158,37 @@ app.post('/api/packs/create',async(req,res)=>{
  try{
   for(const p of projects){if(p.provider==='modrinth')await resolveMr(clean(String(p.version_id),100));else await resolveCf(clean(String(p.id),30),clean(String(p.version_id),30))}
   if(!files.length)throw new Error('Nenhum arquivo compatível foi resolvido.');
-  const loaderKey={fabric:'fabric-loader',quilt:'quilt-loader',forge:'forge',neoforge:'neoforge'}[loader];const index={formatVersion:1,game:'minecraft',versionId:crypto.randomUUID(),name,summary:'Criado com Mikael Modpack Hub',files,dependencies:{minecraft:gameVersion,...(loaderKey?{[loaderKey]:'*'}:{})}};
+  const loaderKey={fabric:'fabric-loader',quilt:'quilt-loader',forge:'forge',neoforge:'neoforge'}[loader];
+  const index={formatVersion:1,game:'minecraft',versionId:crypto.randomUUID(),name,summary:'Criado com Mikael Modpack Hub',files,dependencies:{minecraft:gameVersion,...(loaderKey?{[loaderKey]:'*'}:{})}};
+  const metadata={format:'mikael-modpack',formatVersion:1,name,minecraft:{version:gameVersion,loader},createdAt:new Date().toISOString(),mods:projects.map(p=>({provider:p.provider,projectId:String(p.id),versionId:String(p.version_id),name:clean(p.name||'',120),versionName:clean(p.version_name||'',160)})),resolvedFiles:files.map(f=>({path:f.path,size:f.fileSize,sha1:f.hashes?.sha1||null,sha512:f.hashes?.sha512||null})),requiredDependencies:dependencyCount,warnings};
+  const readme=[
+    '# '+name,
+    '',
+    'Modpack criado com Mikael Modpack Hub.',
+    '',
+    '## Ambiente',
+    '- Minecraft: '+gameVersion,
+    '- Modloader: '+loader,
+    '- Mods e dependências resolvidos: '+files.length,
+    '',
+    '## Instalação',
+    'Importe este arquivo .mrpack em um launcher compatível com o formato Modrinth.',
+    'O launcher baixará os arquivos listados em modrinth.index.json.',
+    '',
+    '## Arquivos incluídos',
+    '- modrinth.index.json: manifesto de instalação e hashes dos arquivos.',
+    '- mikael-modpack.json: metadados e relação de projetos selecionados.',
+    '- overrides/README.txt: local para documentações e configurações adicionais.',
+    '',
+    warnings.length?'## Avisos\n'+warnings.map(w=>'- '+w).join('\n'):'Sem avisos de dependências durante a montagem.'
+  ].join('\n');
   res.setHeader('Content-Type','application/x-modrinth-modpack+zip');res.setHeader('Content-Disposition',"attachment; filename*=UTF-8''"+encodeURIComponent(name.replace(/[^\p{L}\p{N} _-]/gu,'').slice(0,60)+'.mrpack'));
-  const zip=archiver('zip',{zlib:{level:6}});zip.on('error',err=>{console.error('Pack archive:',err.message);if(!res.headersSent)res.status(500).end();else res.destroy(err)});zip.pipe(res);zip.append(JSON.stringify(index,null,2),{name:'modrinth.index.json'});zip.append('Este modpack contém links para os arquivos dos mods. Instale usando um launcher compatível com Modrinth (.mrpack).'+(warnings.length?'\\nAvisos de dependências:\\n'+warnings.join('\\n'):'') ,{name:'README.txt'});await zip.finalize();
+  const zip=archiver('zip',{zlib:{level:6}});zip.on('error',err=>{console.error('Pack archive:',err.message);if(!res.headersSent)res.status(500).end();else res.destroy(err)});zip.pipe(res);
+  zip.append(JSON.stringify(index,null,2),{name:'modrinth.index.json'});
+  zip.append(JSON.stringify(metadata,null,2),{name:'mikael-modpack.json'});
+  zip.append(readme,{name:'README.md'});
+  zip.append('Coloque aqui arquivos de configuração e documentação que devam acompanhar o pacote.\\n',{name:'overrides/README.txt'});
+  await zip.finalize();
  }catch(e){console.error('Pack create:',e.message);if(!res.headersSent)res.status(e.status||400).json({error:e.message||'Falha ao criar modpack.'});else res.destroy(e)}
 });
 
