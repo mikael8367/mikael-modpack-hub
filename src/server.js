@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import archiver from 'archiver';
+import { createAuthRouter } from './auth.js';
 
 const app = express();
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -16,6 +17,7 @@ app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json({ limit: '1mb' }));
 app.use(rateLimit({ windowMs: 60000, limit: 90, standardHeaders: true, legacyHeaders: false }));
 app.use(express.static(path.join(root, 'public')));
+app.use('/api/auth', createAuthRouter());
 
 const clean = (v,n=120) => typeof v === 'string' ? v.trim().slice(0,n) : '';
 const limit = (v,d=20) => Math.max(1,Math.min(50,Number.parseInt(v,10)||d));
@@ -34,6 +36,7 @@ const mrHeaders = {'User-Agent':'MikaelModpackHub/1.0 (modpack discovery)','Acce
 app.get('/health',(_req,res)=>res.json({ok:true,service:'mikael-modpack-hub',providers:{modrinth:true,curseforge:Boolean(process.env.CURSEFORGE_API_KEY)},auth:Boolean(process.env.HUB_API_TOKEN)}));
 app.get('/api/providers',(_req,res)=>res.json({modrinth:{available:true,authentication:'public'},curseforge:{available:Boolean(process.env.CURSEFORGE_API_KEY),authentication:'server-side API key'}}));
 app.use('/api',(req,res,next)=>{
+  if (req.path.startsWith('/auth/')) return next();
   const expected=process.env.HUB_API_TOKEN;
   if(!expected)return next();
   const token=(req.headers.authorization||'').replace(/^Bearer\s+/i,'');
