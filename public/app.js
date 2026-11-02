@@ -118,3 +118,70 @@ $('#bedrock-search-btn').onclick=()=>searchBedrock(0);$('#bedrock-sort').onchang
 $('#bedrock-query').onkeydown=e=>{if(e.key==='Enter')searchBedrock(0)};
 
 let bedrockLoaded=false;const previousGoForBedrock=go;go=function(id){previousGoForBedrock(id);if(id==='bedrock'&&!bedrockLoaded){bedrockLoaded=true;searchBedrock(0)}};
+
+
+// Conta própria do site e sincronização explícita da biblioteca.
+let hubAccount=null;
+async function accountRequest(path,options={}) {
+ const response=await fetch('/api/auth'+path,{credentials:'same-origin',...options,headers:{...(options.headers||{}),'content-type':'application/json'}});
+ const data=await response.json().catch(()=>({}));
+ if(!response.ok)throw Error(data.error||'Falha na conta.');
+ return data;
+}
+function renderAccount(){
+ const state=$('#account-state'),forms=$('#account-forms'),logout=$('#account-logout'),pull=$('#account-sync-pull'),push=$('#account-sync-push');
+ if(hubAccount){state.textContent='Conectado como '+hubAccount.name+' ('+hubAccount.email+').'; forms.hidden=true;logout.hidden=false;pull.disabled=false;push.disabled=false}
+ else{state.textContent='Você está usando a biblioteca local. Entre para ativar a nuvem.';forms.hidden=false;logout.hidden=true;pull.disabled=true;push.disabled=true}
+}
+async function refreshAccount(){
+ try{const data=await accountRequest('/me');hubAccount=data.user;renderAccount()}
+ catch(error){hubAccount=null;renderAccount();$('#account-state').textContent=error.message}
+}
+async function submitAccount(mode){
+ const name=$('#account-name').value.trim(),email=$('#account-email').value.trim(),password=$('#account-password').value;
+ try{
+  const data=await accountRequest(mode,{method:'POST',body:JSON.stringify({name,email,password})});
+  hubAccount=data.user;$('#account-password').value='';renderAccount();toast(mode==='/register'?'Conta criada com sucesso.':'Login realizado.');
+ }catch(error){toast(error.message)}
+}
+$('#account-register').onclick=()=>submitAccount('/register');
+$('#account-login').onclick=()=>submitAccount('/login');
+$('#account-logout').onclick=async()=>{try{await accountRequest('/logout',{method:'POST',body:'{}'});hubAccount=null;renderAccount();toast('Sessão encerrada.')}catch(error){toast(error.message)}};
+$('#account-sync-pull').onclick=async()=>{
+ if(!hubAccount)return;
+ if(!confirm('Substituir a biblioteca deste aparelho pelos dados da nuvem? Exporte uma cópia antes se precisar.'))return;
+ try{const data=await accountRequest('/library');if(!Array.isArray(data.packs))throw Error('Formato recebido inválido.');if(!writeLibrary(data.packs))throw Error('Não foi possível gravar no aparelho.');renderLibrary();toast('Biblioteca baixada da nuvem.')}
+ catch(error){toast(error.message)}
+};
+$('#account-sync-push').onclick=async()=>{
+ if(!hubAccount)return;
+ try{const packs=readLibrary();await accountRequest('/library',{method:'PUT',body:JSON.stringify({packs})});toast('Biblioteca enviada para a nuvem ('+packs.length+' modpacks).')}
+ catch(error){toast(error.message)}
+};
+refreshAccount();
+
+// Importação de biblioteca exportada em JSON ou lista TXT do próprio Hub.
+const importInput=$('#library-import');
+if(importInput)importInput.addEventListener('change',async()=>{
+ const file=importInput.files?.[0];if(!file)return;
+ try{
+  const raw=await file.text();let incoming;
+  if(file.name.toLowerCase().endsWith('.json')){const parsed=JSON.parse(raw);incoming=Array.isArray(parsed)?parsed:[parsed]}
+  else{
+   const lines=raw.split(/\r?\n/),name=(lines.find(x=>x.startsWith('Modpack: '))||'Modpack: Importado').slice(9).trim(),version=(lines.find(x=>x.startsWith('Minecraft: '))||'Minecraft: ').slice(11).trim(),loader=(lines.find(x=>x.startsWith('Loader: '))||'Loader: forge').slice(8).trim();
+   const projects=lines.filter(x=>x.startsWith('- ')).map(line=>{const parts=line.slice(2).split(' | ');const id=(parts[3]||'').replace(/^ID\s*/,'').trim(),versionId=(parts[4]||'').replace(/^versão\s*/,'').trim();return {name:parts[0]||'Mod importado',provider:parts[1],version_name:parts[2],id,version_id:versionId,game_version:version,loader}});
+   incoming=[{name,minecraft_version:version,loader,projects,saved_at:new Date().toISOString()}];
+  }
+  const valid=incoming.filter(p=>p&&typeof p.name==='string'&&typeof p.minecraft_version==='string'&&Array.isArray(p.projects)&&p.projects.length<=100&&p.projects.every(x=>['modrinth','curseforge'].includes(x.provider)&&x.id&&x.version_id));
+  if(!valid.length)throw Error('O arquivo não contém modpacks válidos do Hub.');
+  const merged=[...valid,...readLibrary()].slice(0,100);if(!writeLibrary(merged))throw Error('Armazenamento local cheio.');
+  renderLibrary();toast(valid.length+' modpack(s) importado(s).');
+ }catch(error){toast(error.message||'Falha ao importar arquivo.')}
+ finally{importInput.value=''}
+});
+
+// Tema claro opcional, sem alterar o tema padrão.
+const themeKey='modpack-hub-theme';
+function applyTheme(theme){document.documentElement.dataset.theme=theme;const button=$('#theme-toggle');if(button)button.textContent=theme==='light'?'Ativar tema escuro':'Ativar tema claro'}
+applyTheme(localStorage.getItem(themeKey)==='light'?'light':'dark');
+$('#theme-toggle').onclick=()=>{const next=document.documentElement.dataset.theme==='light'?'dark':'light';localStorage.setItem(themeKey,next);applyTheme(next)};
