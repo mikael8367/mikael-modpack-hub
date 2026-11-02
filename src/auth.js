@@ -35,6 +35,16 @@ function database() {
       packs JSONB NOT NULL DEFAULT '[]'::jsonb,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS hub_community_packs (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES hub_users(id) ON DELETE CASCADE,
+      pack_name VARCHAR(80) NOT NULL,
+      minecraft_version VARCHAR(20) NOT NULL,
+      description VARCHAR(500) NOT NULL DEFAULT '',
+      image_data TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS hub_community_created_idx ON hub_community_packs(created_at DESC);
   `).catch(error => { schemaPromise = null; throw error; });
   return pool;
 }
@@ -150,6 +160,62 @@ export function createAuthRouter() {
     } catch (error) {
       console.error('Auth logout:', error.message);
       res.status(503).json({ error: 'Não foi possível encerrar a sessão.' });
+    }
+  });
+
+  // Public catalog; publishing is restricted to authenticated accounts.
+  router.get('/community/packs', async (req, res) => {
+    try {
+      const result = await database().query(
+        'SELECT p.id,p.pack_name,p.minecraft_version,p.description,p.image_data,p.created_at,u.display_name FROM hub_community_packs p JOIN hub_users u ON u.id=p.user_id ORDER BY p.created_at DESC LIMIT 100'
+      );
+      res.json({ packs: result.rows.map(row => ({
+        id: String(row.id), name: row.pack_name, minecraft_version: row.minecraft_version,
+        description: row.description, image: row.image_data, author: row.display_name, created_at: row.created_at
+      })) });
+    } catch (error) {
+      console.error('Community list:', error.message);
+      res.status(503).json({ error: 'Não foi possível carregar a comunidade.' });
+    }
+  });
+  router.post('/community/packs', async (req, res) => {
+    if (!req.hubUser) return res.status(401).json({ error: 'Entre na sua conta para publicar um modpack.' });
+    const name = String(req.body?.name || '').trim().slice(0, 80);
+    const version = String(req.body?.minecraft_version || '').trim();
+    const description = String(req.body?.description || '').trim().slice(0, 500);
+    const image = String(req.body?.image || '');
+    if (name.length < 3 || !/^\\d+\\.\\d+(\\.\\d+)?$/.test(version))
+      return res.status(400).json({ error: 'Informe nome e versão Minecraft válidos.' });
+    const match = image.match(/^data:image\\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/);
+    if (!match) return res.status(400).json({ error: 'Envie uma imagem PNG, JPG ou WebP.' });
+    const imageBytes = Buffer.from(match[2], 'base64');
+    if (!imageBytes.length || imageBytes.length > 1024 * 1024)
+      return res.status(413).json({ error: 'A foto deve ter no máximo 1 MB.' });
+    try {
+      const result = await database().query(
+        'INSERT INTO hub_community_packs(user_id,pack_name,minecraft_version,description,image_data) VALUES($1,$2,$3,$4,$5) RETURNING id,pack_name,minecraft_version,description,image_data,created_at',
+        [req.hubUser.id, name, version, description, image]
+      );
+      const row = result.rows[0];
+      res.status(201).json({ pack: {
+        id: String(row.id), name: row.pack_name, minecraft_version: row.minecraft_version,
+        description: row.description, image: row.image_data, author: req.hubUser.display_name, created_at: row.created_at
+      } });
+    } catch (error) {
+      console.error('Community publish:', error.message);
+      res.status(503).json({ error: 'Não foi possível publicar agora.' });
+    }
+  });
+  router.delete('/community/packs/:id', async (req, res) => {
+    if (!req.hubUser) return res.status(401).json({ error: 'Entre na sua conta.' });
+    if (!/^\\d+$/.test(req.params.id)) return res.status(400).json({ error: 'ID inválido.' });
+    try {
+      const result = await database().query('DELETE FROM hub_community_packs WHERE id=$1 AND user_id=$2 RETURNING id', [req.params.id, req.hubUser.id]);
+      if (!result.rowCount) return res.status(404).json({ error: 'Publicação não encontrada ou não pertence à sua conta.' });
+      res.json({ ok: true });
+    } catch (error) {
+      console.error('Community delete:', error.message);
+      res.status(503).json({ error: 'Não foi possível excluir a publicação.' });
     }
   });
 
