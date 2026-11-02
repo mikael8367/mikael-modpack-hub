@@ -193,15 +193,15 @@ function renderAccount(){
 }
 const offlineAccountKey='mikael-hub-offline-account';
 async function refreshAccount(){
- try{const data=await accountRequest('/me');hubAccount=data.user;if(hubAccount)localStorage.removeItem(offlineAccountKey);else{try{hubAccount=JSON.parse(localStorage.getItem(offlineAccountKey)||'null')}catch{hubAccount=null}}renderAccount()}
- catch(error){try{hubAccount=JSON.parse(localStorage.getItem(offlineAccountKey)||'null')}catch{hubAccount=null}renderAccount();if(!hubAccount)$('#account-state').textContent=error.message}
+ try{const data=await accountRequest('/me');hubAccount=data.user;if(hubAccount)localStorage.removeItem(offlineAccountKey);else{try{hubAccount=JSON.parse(localStorage.getItem(offlineAccountKey)||'null')}catch{hubAccount=null}}renderAccount();renderCommunityAccess()}
+ catch(error){try{hubAccount=JSON.parse(localStorage.getItem(offlineAccountKey)||'null')}catch{hubAccount=null}renderAccount();renderCommunityAccess();if(!hubAccount)$('#account-state').textContent=error.message}
 }
 async function submitAccount(mode){
  const name=$('#account-name').value.trim().toLowerCase(),password=$('#account-password').value;
  if(mode==='/register'&&!/^[a-z0-9_]{3,20}$/.test(name))return toast('Use 3 a 20 caracteres: letras sem acento, números e _. Sem espaços.');
  try{
   const data=await accountRequest(mode,{method:'POST',body:JSON.stringify({name,username:name,password})});
-  hubAccount=data.user;$('#account-password').value='';renderAccount();toast(mode==='/register'?'Conta criada com sucesso.':'Login realizado.');
+  hubAccount=data.user;$('#account-password').value='';renderAccount();renderCommunityAccess();toast(mode==='/register'?'Conta criada com sucesso.':'Login realizado.');
  }catch(error){toast(error.message)}
 }
 $('#account-offline').onclick=()=>{const name=$('#offline-account-name').value.trim().toLowerCase();if(name==='mikael_oficial')return toast('O nome mikael_oficial é reservado ao criador oficial.');if(!/^[a-z0-9_]{3,20}$/.test(name))return toast('Use de 3 a 20 caracteres: letras, números e _.');hubAccount={name,username:name,offline:true};localStorage.setItem(offlineAccountKey,JSON.stringify(hubAccount));renderAccount();renderCommunityAccess();toast('Conta offline criada neste aparelho.')};
@@ -278,12 +278,14 @@ function renderCommunityAccess(){
  if(hint)hint.textContent='Publicar na comunidade pública';
  const officialHint=$('#community-publish-card')?.querySelector('.official-publish-note');
  if(officialHint)officialHint.hidden=!creator;
+ updateCommunitySubmitLabel();
 }
 let communityEditingId=null,communityEditingToken=null;
 const communityOfflineTokensKey='mikael-community-edit-tokens';
 function communityOfflineTokens(){try{return JSON.parse(localStorage.getItem(communityOfflineTokensKey)||'{}')}catch{return {}}}
 function newCommunityToken(){const bytes=new Uint8Array(32);crypto.getRandomValues(bytes);return [...bytes].map(x=>x.toString(16).padStart(2,'0')).join('')}
-function resetCommunityEditor(){communityEditingId=null;communityEditingToken=null;$('#community-form').reset();if($('#community-is-official'))$('#community-is-official').checked=false;const preview=$('#community-preview');preview.innerHTML='';delete preview.dataset.image;$('#community-submit').textContent='Publicar na comunidade';const cancel=$('#community-cancel-edit');if(cancel)cancel.hidden=true}
+function updateCommunitySubmitLabel(){const official=Boolean(!communityEditingId&&hubAccount&&!hubAccount.offline&&String(hubAccount.username||'').toLowerCase()==='mikael_oficial'&&$('#community-is-official')?.checked);$('#community-submit').textContent=communityEditingId?'Salvar alterações':official?'Publicar na Comunidade Oficial':'Publicar na comunidade pública'}
+function resetCommunityEditor(){communityEditingId=null;communityEditingToken=null;$('#community-form').reset();if($('#community-is-official'))$('#community-is-official').checked=false;updateCommunitySubmitLabel();const preview=$('#community-preview');preview.innerHTML='';delete preview.dataset.image;$('#community-submit').textContent='Publicar na comunidade';const cancel=$('#community-cancel-edit');if(cancel)cancel.hidden=true}
 async function loadCommunity(){
  const host=$('#community-list'),officialHost=$('#official-community-list');if(!host||!officialHost)return;
  host.innerHTML='<div class="empty">Carregando publicações…</div>';officialHost.innerHTML='<div class="empty">Carregando modpacks oficiais…</div>';
@@ -332,6 +334,7 @@ if(communityImage)communityImage.addEventListener('change',async()=>{
  try{const data=await compressCommunityImage(file);preview.innerHTML='<img src="'+data+'" alt="Prévia da capa selecionada">';preview.dataset.image=data}
  catch(error){delete preview.dataset.image;communityImage.value='';toast(error.message)}
 });
+$('#community-is-official')?.addEventListener('change',updateCommunitySubmitLabel);
 $('#community-form').addEventListener('submit',async event=>{
  event.preventDefault();if(!hubAccount)return toast('Crie uma conta online ou offline antes de publicar.');
  if(communityBusy)return;
@@ -352,7 +355,7 @@ $('#community-form').addEventListener('submit',async event=>{
   if(!wasEditing&&offlineToken){const tokens=communityOfflineTokens();tokens[data.pack.id]=offlineToken;localStorage.setItem(communityOfflineTokensKey,JSON.stringify(tokens))}
   resetCommunityEditor();toast(wasEditing?'Modpack atualizado!':'Modpack publicado na comunidade!');await loadCommunity();
  }catch(error){toast(error.message)}
- finally{communityBusy=false;button.disabled=false;button.textContent=communityEditingId?'Salvar alterações':'Publicar na comunidade'}
+ finally{communityBusy=false;button.disabled=false;updateCommunitySubmitLabel()}
 });
 $('#community-list').addEventListener('click',event=>{const button=event.target.closest('.community-edit');if(!button)return;const id=button.dataset.id;fetch('/api/auth/community/packs',{credentials:'same-origin'}).then(r=>r.json()).then(data=>{const pack=(data.packs||[]).find(x=>String(x.id)===String(id));if(!pack)return toast('Publicação não encontrada.');communityEditingId=String(id);communityEditingToken=communityOfflineTokens()[id]||null;$('#community-name').value=pack.name;$('#community-version').value=pack.minecraft_version;$('#community-description').value=pack.description||'';const preview=$('#community-preview');preview.dataset.image=pack.image;preview.innerHTML='<img src="'+esc(pack.image)+'" alt="Capa atual">';$('#community-submit').textContent='Salvar alterações';const cancel=$('#community-cancel-edit');if(cancel)cancel.hidden=false;$('#community-publish-card').hidden=false;$('#community-name').scrollIntoView({behavior:'smooth',block:'center'})}).catch(()=>toast('Não foi possível abrir a publicação.'))});
 $('#community-cancel-edit')?.addEventListener('click',resetCommunityEditor);
