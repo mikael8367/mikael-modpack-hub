@@ -119,6 +119,8 @@ document.querySelectorAll('[data-catalog-type]').forEach(button=>button.addEvent
  const labels={mods:'Ex.: JEI, Create, Sodium',resourcepacks:'Ex.: Faithful, Patrix',shaders:'Ex.: Complementary, BSL',modpacks:'Ex.: Create: Above and Beyond, FTB'};
  $('#query').placeholder=labels[type];const loader=$('#loader');loader.disabled=type!=='mods';$('#game-version').disabled=type==='modpacks';search(false,0);
 }));$('#game-version').onchange=()=>search(!$('#query').value.trim(),0);$('#loader').onchange=()=>search(!$('#query').value.trim(),0);$('#sort-order').onchange=()=>search(!$('#query').value.trim(),0);
+// A aba de catálogo já abre ativa: carregar os mods populares imediatamente.
+if(!popularLoaded){popularLoaded=true;search(true,0)}
 const validateButton=$('#validate');if(validateButton)validateButton.onclick=async()=>{const body={name:$('#pack-name').value.trim(),minecraft_version:$('#pack-version').value.trim(),loader:$('#pack-loader').value.toLowerCase(),projects:selected};try{const r=await fetch('/api/packs/validate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),d=await r.json();$('#manifest').hidden=false;$('#manifest').textContent=JSON.stringify(d,null,2);toast(d.valid?'Manifesto válido.':'Revise os dados.')}catch{toast('Falha ao validar.')}};
 status();
 
