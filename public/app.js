@@ -162,10 +162,10 @@ async function refreshAccount(){
  catch(error){try{hubAccount=JSON.parse(localStorage.getItem(offlineAccountKey)||'null')}catch{hubAccount=null}renderAccount();if(!hubAccount)$('#account-state').textContent=error.message}
 }
 async function submitAccount(mode){
- const name=$('#account-name').value.trim().toLowerCase(),email=$('#account-email').value.trim(),password=$('#account-password').value;
+ const name=$('#account-name').value.trim().toLowerCase(),password=$('#account-password').value;
  if(mode==='/register'&&!/^[a-z0-9_]{3,20}$/.test(name))return toast('Use 3 a 20 caracteres: letras sem acento, números e _. Sem espaços.');
  try{
-  const data=await accountRequest(mode,{method:'POST',body:JSON.stringify({name,email,password})});
+  const data=await accountRequest(mode,{method:'POST',body:JSON.stringify({name,username:name,password})});
   hubAccount=data.user;$('#account-password').value='';renderAccount();toast(mode==='/register'?'Conta criada com sucesso.':'Login realizado.');
  }catch(error){toast(error.message)}
 }
