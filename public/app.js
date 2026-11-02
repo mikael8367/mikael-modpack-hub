@@ -21,7 +21,7 @@ async function search(popular=false,page=0){
   renderPagination();
  }catch(e){if(requestId!==searchRequest)return;currentPage=previousPage;$('#results').innerHTML='<div class="empty">'+esc(e.message)+'</div>';renderPagination()}
 }
-function renderPagination(){const el=$('#pagination');if(!el)return;el.innerHTML='<button id="page-prev" '+(currentPage===0?'disabled':'')+'>‹ Anterior</button><span>Página '+(currentPage+1)+'</span><button id="page-next">Próxima ›</button>';$('#page-prev').onclick=()=>search(false,currentPage-1);$('#page-next').onclick=()=>search(false,currentPage+1)}
+function renderPagination(){const el=$('#pagination');if(!el)return;el.innerHTML='<button id="page-prev" '+(currentPage===0?'disabled':'')+'>‹ Anterior</button><span>Página '+(currentPage+1)+'</span><button id="page-next" '+((currentPage+1)*PAGE_SIZE>=searchTotal?'disabled':'')+'>Próxima ›</button>';$('#page-prev').onclick=()=>search(false,currentPage-1);$('#page-next').onclick=()=>search(false,currentPage+1)}
 let modalProject=null,modalProvider=null,modalMode='pack',availableFiles=[];
 function fillOptions(select,values,firstLabel){select.innerHTML='<option value="">'+firstLabel+'</option>'+values.map(v=>'<option value="'+esc(v)+'">'+esc(v)+'</option>').join('')}
 function refreshFileOptions(){
