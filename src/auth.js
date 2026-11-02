@@ -191,11 +191,14 @@ export function createAuthRouter() {
     const version = String(req.body?.minecraft_version || '').trim();
     const description = String(req.body?.description || '').trim().slice(0, 500);
     const image = String(req.body?.image || '');
-    if (name.length < 3 || !/^\\d+\\.\\d+(\\.\\d+)?$/.test(version))
+    if (name.length < 3 || !/^[0-9]+[.][0-9]+([.][0-9]+)?$/.test(version))
       return res.status(400).json({ error: 'Informe nome e versão Minecraft válidos.' });
-    const match = image.match(/^data:image\\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/);
-    if (!match) return res.status(400).json({ error: 'Envie uma imagem PNG, JPG ou WebP.' });
-    const imageBytes = Buffer.from(match[2], 'base64');
+    const comma = image.indexOf(',');
+    const header = comma >= 0 ? image.slice(0, comma) : '';
+    const encoded = comma >= 0 ? image.slice(comma + 1) : '';
+    if (!['data:image/png;base64', 'data:image/jpeg;base64', 'data:image/webp;base64'].includes(header) || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))
+      return res.status(400).json({ error: 'Envie uma imagem PNG, JPG ou WebP.' });
+    const imageBytes = Buffer.from(encoded, 'base64');
     if (!imageBytes.length || imageBytes.length > 1024 * 1024)
       return res.status(413).json({ error: 'A foto deve ter no máximo 1 MB.' });
     try {
@@ -215,7 +218,7 @@ export function createAuthRouter() {
   });
   router.delete('/community/packs/:id', async (req, res) => {
     if (!req.hubUser) return res.status(401).json({ error: 'Entre na sua conta.' });
-    if (!/^\\d+$/.test(req.params.id)) return res.status(400).json({ error: 'ID inválido.' });
+    if (!/^[0-9]+$/.test(req.params.id)) return res.status(400).json({ error: 'ID inválido.' });
     try {
       const result = await dbQuery('DELETE FROM hub_community_packs WHERE id=$1 AND user_id=$2 RETURNING id', [req.params.id, req.hubUser.id]);
       if (!result.rowCount) return res.status(404).json({ error: 'Publicação não encontrada ou não pertence à sua conta.' });
