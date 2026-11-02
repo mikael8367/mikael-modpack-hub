@@ -293,19 +293,59 @@ async function extractCrashFile(file){
  return out;
 }
 function diagnoseCrash(text){
+ const source=String(text||'').replace(/\u0000/g,'').replace(/\r/g,'');
+ const lines=source.split('\n');
  const rules=[
-  {name:'Memória insuficiente',level:'warning',re:/OutOfMemoryError|Java heap space|GC overhead limit exceeded|Could not reserve enough space|Failed to allocate/i,why:'A JVM ou o processo não conseguiu reservar memória suficiente.',fix:'Reduza a quantidade de mods e a distância de renderização; confira a memória alocada e feche apps em segundo plano.'},
-  {name:'Dependência ou classe ausente',level:'error',re:/NoClassDefFoundError|ClassNotFoundException|Missing .* dependency|requires .* but/i,why:'Uma classe ou dependência necessária não foi encontrada.',fix:'Confira a dependência exigida e instale uma versão compatível com seu Minecraft e modloader.'},
-  {name:'Conflito entre mods',level:'warning',re:/Mixin apply failed|DuplicateModsFoundException|ModLoadingException|mod .* failed to load|MixinTransformerError/i,why:'Um mod falhou ao carregar ou houve conflito durante a transformação de classes.',fix:'Compare os mods citados no trecho do erro; teste removendo ou atualizando o mod apontado.'},
-  {name:'Versão incompatível',level:'warning',re:/UnsupportedClassVersionError|requires Minecraft|incompatible.*version|wrong version|not a valid mod/i,why:'Pode haver incompatibilidade entre a versão do mod, Minecraft, Java ou loader.',fix:'Confirme que todos os mods foram feitos para a mesma versão do Minecraft e loader.'},
-  {name:'Falha gráfica ou OpenGL',level:'warning',re:/OpenGL error|GL_INVALID|GL_OUT_OF_MEMORY|Failed to create.*context|Renderer .*failed|shader.*compile/i,why:'O renderizador, driver gráfico ou shader pode ter falhado.',fix:'Desative shaders e recursos gráficos avançados; teste outro renderizador compatível e atualize os componentes do launcher.'},
-  {name:'Falha ao acessar arquivo',level:'warning',re:/AccessDeniedException|Permission denied|FileNotFoundException|NoSuchFileException/i,why:'O jogo não conseguiu acessar um arquivo ou diretório.',fix:'Verifique se o arquivo existe, se não está corrompido e se o launcher tem permissão de acesso.'},
-  {name:'Erro de Java',level:'error',re:/Unsupported Java|Java version|java\.lang\.VerifyError|InternalError/i,why:'A versão ou execução do Java pode ser incompatível.',fix:'Use a versão Java exigida pelo Minecraft e pelos mods instalados.'},
-  {name:'Falha de conexão',level:'info',re:/UnknownHostException|Connection timed out|ConnectException|Failed to download/i,why:'O jogo ou launcher não conseguiu acessar um serviço remoto.',fix:'Verifique a conexão e tente novamente; confira se o endereço remoto está correto.'}
+  {id:'oom',name:'Memória insuficiente (RAM/Heap)',level:'critical',re:/OutOfMemoryError|Java heap space|GC overhead limit exceeded|Could not reserve enough space|Failed to allocate memory|unable to create native thread/i,why:'A JVM ou o processo nativo ficou sem memória disponível.',fix:'Reduza a quantidade de mods e a distância de renderização. Feche apps em segundo plano e confira se a RAM reservada não excede a memória disponível. Se for erro de memória nativa, reduzir a RAM do jogo pode ajudar.',relevance:10},
+  {id:'missing-class',name:'Classe ou dependência ausente',level:'critical',re:/NoClassDefFoundError|ClassNotFoundException|NoSuchMethodError|NoSuchFieldError/i,why:'Um mod tentou usar uma classe, método ou campo que não existe na instalação atual.',fix:'Leia a primeira linha “Caused by” e identifique o mod que chamou a classe. Instale a dependência correta ou alinhe as versões dos mods.',relevance:10},
+  {id:'mod-loading',name:'Falha durante carregamento de mod',level:'critical',re:/ModLoadingException|Failed to load mod|Errors during loading|Failed to construct mod|Mod .* encountered an error/i,why:'O loader não conseguiu inicializar um ou mais mods.',fix:'Abra o bloco “Failure message” ou “Mod File” no relatório e verifique o mod indicado. Confira a versão do Minecraft, loader e dependências.',relevance:9},
+  {id:'mixin',name:'Falha de Mixin / incompatibilidade de mod',level:'critical',re:/Mixin apply failed|MixinTransformerError|InvalidMixinException|MixinApplyError|Critical injection failure|InjectionError/i,why:'Um Mixin não conseguiu modificar uma classe, frequentemente por incompatibilidade entre mods ou versões.',fix:'Procure no trecho o nome do mixin e o mod de origem. Atualize ou remova temporariamente o mod conflitante e confira dependências.',relevance:10},
+  {id:'duplicate',name:'Mods duplicados',level:'error',re:/DuplicateModsFoundException|duplicate mods found|Mod ID .* is duplicated|Duplicate mod/i,why:'Existem dois arquivos de mod registrando o mesmo identificador.',fix:'Remova a cópia duplicada da pasta mods e mantenha apenas uma versão compatível.',relevance:9},
+  {id:'version',name:'Versão incompatível de Minecraft, loader ou Java',level:'error',re:/UnsupportedClassVersionError|Unsupported Java|requires Minecraft|incompatible.*version|wrong version|only supports.*Minecraft|Java Runtime Environment.*class file version/i,why:'Um componente foi compilado para outra versão de Java, Minecraft ou modloader.',fix:'Confira a versão exigida pelo mod. Minecraft 1.12.2 normalmente usa Java 8; versões mais novas podem exigir Java 17 ou 21, conforme a versão do jogo.',relevance:9},
+  {id:'java-crash',name:'Exceção interna do Java',level:'error',re:/VerifyError|ExceptionInInitializerError|LinkageError|IllegalAccessError|IncompatibleClassChangeError/i,why:'A JVM encontrou incompatibilidade binária ou falha durante a inicialização de uma classe.',fix:'Verifique a causa mais profunda em “Caused by”. Pode indicar mod incompatível, biblioteca incorreta ou Java inadequado.',relevance:8},
+  {id:'graphics',name:'Falha gráfica / OpenGL / renderizador',level:'error',re:/OpenGL error|GL_INVALID_|GL_OUT_OF_MEMORY|Failed to create.*context|Could not create.*(context|window)|Pixel format not accelerated|No OpenGL context|Renderer .*failed|shader.*compile|GLFW error/i,why:'A inicialização gráfica falhou ou o driver/renderizador não oferece o recurso solicitado.',fix:'Desative shaders e pacotes gráficos. No Android, teste um renderizador compatível com o aparelho e reduza resolução e efeitos.',relevance:9},
+  {id:'native',name:'Falha de biblioteca nativa',level:'critical',re:/UnsatisfiedLinkError|SIGSEGV|SIGABRT|EXCEPTION_ACCESS_VIOLATION|A fatal error has been detected by the Java Runtime Environment/i,why:'Uma biblioteca nativa ou componente de baixo nível falhou.',fix:'Confira arquitetura (ARM/ARM64/x86), bibliotecas nativas, Java e renderizador. Se houver “Problematic frame”, ele pode indicar o componente envolvido.',relevance:9},
+  {id:'file',name:'Arquivo ausente, bloqueado ou corrompido',level:'warning',re:/AccessDeniedException|Permission denied|FileNotFoundException|NoSuchFileException|ZipException|zip END header not found|Invalid or corrupt jarfile/i,why:'O jogo não conseguiu ler um arquivo, ou um JAR/ZIP pode estar incompleto ou corrompido.',fix:'Verifique o caminho e as permissões. Baixe novamente o arquivo afetado e confira se o mod corresponde ao loader e à versão do jogo.',relevance:8},
+  {id:'stack',name:'Estouro de pilha (StackOverflow)',level:'error',re:/StackOverflowError/i,why:'Uma chamada recursiva ou ciclo de chamadas excedeu o limite da pilha.',fix:'Procure o primeiro mod repetido no stack trace. Pode ser conflito ou bug em mod; teste versões compatíveis e isole o mod suspeito.',relevance:8},
+  {id:'fabric',name:'Falha de carregamento Fabric',level:'error',re:/net\.fabricmc\.loader|FabricLoader|EntrypointException|ModResolutionException/i,why:'O Fabric Loader encontrou falha ao resolver dependências ou iniciar um entrypoint.',fix:'Confira a mensagem de resolução, a versão do Fabric Loader e dependências como Fabric API. Não misture mods de Forge com Fabric.',relevance:8},
+  {id:'forge',name:'Falha do Forge / FML',level:'error',re:/net\.minecraftforge\.fml|FMLCommonHandler|LoadingFailedException|Forge Mod Loader has found a problem|The following mods.*failed/i,why:'O Forge/FML registrou um problema no carregamento ou na inicialização.',fix:'Use o bloco de erro do Forge para localizar o mod e a dependência. Confirme que todos os arquivos são para a mesma versão do Forge.',relevance:8},
+  {id:'connection',name:'Falha de rede ou download',level:'warning',re:/UnknownHostException|Connection timed out|ConnectException|Failed to download|SSLHandshakeException/i,why:'O launcher ou jogo não conseguiu obter um recurso remoto.',fix:'Confira a conexão, data/hora do aparelho e disponibilidade do servidor de download. Tente novamente mais tarde.',relevance:5}
  ];
- const found=rules.filter(rule=>rule.re.test(text));
- const lines=text.split(/\r?\n/),important=lines.filter(line=>/\b(Caused by:|Exception|Error|FATAL|CRITICAL)\b/i.test(line)).slice(0,18);
- return {found,important,lines:lines.length};
+ const findings=[];
+ for(const rule of rules){
+  const matches=[];
+  for(let i=0;i<lines.length;i++)if(rule.re.test(lines[i]))matches.push(i);
+  if(matches.length){
+   const idx=matches[0],from=Math.max(0,idx-2),to=Math.min(lines.length,idx+3);
+   findings.push({...rule,count:matches.length,firstLine:idx+1,snippet:lines.slice(from,to).join('\n').slice(0,900)});
+  }
+ }
+ const causeLines=[];
+ for(let i=0;i<lines.length;i++)if(/^\s*(Caused by:|Suppressed:|Failure message:|Description:|Exception in thread|---- Minecraft Crash Report)/i.test(lines[i]))causeLines.push({line:i+1,text:lines.slice(i,Math.min(lines.length,i+5)).join('\n').slice(0,900)});
+ const metadata={};
+ const patterns=[
+  ['Minecraft',/(?:Minecraft Version|minecraft_version|game version)[:=]\s*([^\s,]+)/i],
+  ['Forge',/(?:Forge Version|forge version|MinecraftForge)[^\n:]*[:=]\s*([0-9][^\s,]+)/i],
+  ['Fabric',/(?:Fabric Loader|fabric-loader)[^\n:]*[:= ]\s*([0-9][^\s,]+)/i],
+  ['Java',/(?:Java Version|java version|java\.version)[:= ]\s*([^\n,]+)/i],
+  ['Sistema',/(?:Operating System|os\.name)[:= ]\s*([^\n,]+)/i],
+  ['Memória',/(?:Memory|Mem:)[^\n]*?([0-9.]+\s*(?:MB|MiB|GB|GiB))/i]
+ ];
+ for(const [label,re] of patterns){const m=source.match(re);if(m)metadata[label]=m[1].trim().slice(0,100)}
+ const modCandidates=new Map();
+ const modPatterns=[
+  /Mod File:\s*([^,\n]+)/ig,
+  /Failure message:\s*([^:\n]+):/ig,
+  /Suspected Mods?:\s*([^\n]+)/ig,
+  /(?:^|\n)\s*-\s*([A-Za-z0-9_.-]+)\s*\[[^\]\n]*\]/g
+ ];
+ for(const re of modPatterns){let m;while((m=re.exec(source))!==null){const value=(m[1]||'').trim().replace(/^.*[\\/]/,'').replace(/\.(jar|zip)$/i,'');if(value&&value.length<100&&!/^(unknown|minecraft|java)$/i.test(value))modCandidates.set(value,(modCandidates.get(value)||0)+1)}}
+ const mods=[...modCandidates.entries()].sort((a,b)=>b[1]-a[1]).slice(0,12).map(([name,count])=>({name,count}));
+ const fatal=lines.findIndex(line=>/---- Minecraft Crash Report|A detailed walkthrough|Description:.*(crash|exception)|The game crashed/i.test(line));
+ const relevantLines=lines.map((line,i)=>({line,i})).filter(x=>/^\s*(at |Caused by:|Suppressed:)|Exception|Error|FATAL|CRITICAL|Failure message:|Mod File:|Suspected Mods?/i.test(x.line)).slice(0,35);
+ findings.sort((a,b)=>b.relevance-a.relevance);
+ const rootCause=causeLines.length?causeLines[causeLines.length-1]:null;
+ return {findings,causeLines,rootCause,metadata,mods,important:relevantLines.map(x=>x.line),fatalLine:fatal>=0?fatal+1:null,lineCount:lines.length,characterCount:source.length};
 }
 $('#crash-analyze').onclick=async()=>{
  const files=[...(crashFiles.files||[])],button=$('#crash-analyze'),report=$('#crash-report'),content=$('#crash-report-content');
