@@ -273,7 +273,7 @@ let communityEditingId=null,communityEditingToken=null;
 const communityOfflineTokensKey='mikael-community-edit-tokens';
 function communityOfflineTokens(){try{return JSON.parse(localStorage.getItem(communityOfflineTokensKey)||'{}')}catch{return {}}}
 function newCommunityToken(){const bytes=new Uint8Array(32);crypto.getRandomValues(bytes);return [...bytes].map(x=>x.toString(16).padStart(2,'0')).join('')}
-function resetCommunityEditor(){communityEditingId=null;communityEditingToken=null;$('#community-form').reset();const preview=$('#community-preview');preview.innerHTML='';delete preview.dataset.image;$('#community-submit').textContent='Publicar na comunidade';const cancel=$('#community-cancel-edit');if(cancel)cancel.hidden=true}
+function resetCommunityEditor(){communityEditingId=null;communityEditingToken=null;$('#community-form').reset();if($('#community-is-official'))$('#community-is-official').checked=false;const preview=$('#community-preview');preview.innerHTML='';delete preview.dataset.image;$('#community-submit').textContent='Publicar na comunidade';const cancel=$('#community-cancel-edit');if(cancel)cancel.hidden=true}
 async function loadCommunity(){
  const host=$('#community-list'),officialHost=$('#official-community-list');if(!host||!officialHost)return;
  host.innerHTML='<div class="empty">Carregando publicações…</div>';officialHost.innerHTML='<div class="empty">Carregando modpacks oficiais…</div>';
@@ -335,7 +335,7 @@ $('#community-form').addEventListener('submit',async event=>{
  const offlineToken=(!wasEditing&&hubAccount?.offline)?newCommunityToken():null;
  communityBusy=true;button.disabled=true;button.textContent=wasEditing?'Salvando…':'Publicando…';
  try{
-  const body={name,minecraft_version:version,description,image,...(wasEditing?(communityEditingToken?{offline_edit_token:communityEditingToken}:{}):hubAccount?.offline?{offline:true,offline_username:hubAccount.username||hubAccount.name,offline_edit_token:offlineToken}:{})};
+  const body={name,minecraft_version:version,description,image,is_official:Boolean(!wasEditing&&$('#community-is-official')?.checked),...(wasEditing?(communityEditingToken?{offline_edit_token:communityEditingToken}:{}):hubAccount?.offline?{offline:true,offline_username:hubAccount.username||hubAccount.name,offline_edit_token:offlineToken}:{})};
   const endpoint='/api/auth/community/packs'+(wasEditing?'/'+encodeURIComponent(communityEditingId):'');
   const response=await fetch(endpoint,{method:wasEditing?'PATCH':'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
   const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||(wasEditing?'Falha ao atualizar.':'Falha ao publicar.'));
