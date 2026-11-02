@@ -133,6 +133,7 @@ export function createAuthRouter() {
       const username = name.toLowerCase();
       const email = String(req.body?.email || '').trim().toLowerCase();
       const password = String(req.body?.password || '');
+      if (username === 'mikael_oficial') return res.status(409).json({ error: 'O nome mikael_oficial é reservado ao criador oficial.' });
       if (!/^[a-z0-9_]{3,20}$/.test(username))
         return res.status(400).json({ error: 'O nome de usuário deve ter de 3 a 20 caracteres: somente letras sem acento, números e _. Não use espaços.' });
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254)
@@ -179,6 +180,8 @@ export function createAuthRouter() {
   router.patch('/profile/username', async (req, res) => {
     if (!req.hubUser) return res.status(401).json({ error: 'Entre na sua conta para alterar o nome.' });
     const username = String(req.body?.username || '').trim().toLowerCase();
+    if (username === 'mikael_oficial' && req.hubUser.username !== 'mikael_oficial')
+      return res.status(403).json({ error: 'Esse nome é reservado ao criador oficial.' });
     if (!/^[a-z0-9_]{3,20}$/.test(username)) return res.status(400).json({ error: 'Use 3 a 20 caracteres: letras, números e _.' });
     try {
       const result = await dbQuery(
@@ -292,7 +295,10 @@ export function createAuthRouter() {
     if (!req.hubUser) return res.status(401).json({ error: 'Entre na sua conta.' });
     if (!/^[0-9]+$/.test(req.params.id)) return res.status(400).json({ error: 'ID inválido.' });
     try {
-      const result = await dbQuery('DELETE FROM hub_community_packs WHERE id=$1 AND user_id=$2 RETURNING id', [req.params.id, req.hubUser.id]);
+      const isCreator = String(req.hubUser.username || '').toLowerCase() === 'mikael_oficial';
+      const result = isCreator
+        ? await dbQuery('DELETE FROM hub_community_packs WHERE id=$1 RETURNING id', [req.params.id])
+        : await dbQuery('DELETE FROM hub_community_packs WHERE id=$1 AND user_id=$2 RETURNING id', [req.params.id, req.hubUser.id]);
       if (!result.rowCount) return res.status(404).json({ error: 'Publicação não encontrada ou não pertence à sua conta.' });
       res.json({ ok: true });
     } catch (error) {
