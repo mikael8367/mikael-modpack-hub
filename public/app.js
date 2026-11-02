@@ -252,3 +252,82 @@ const previousGoForCommunity=go;
 go=function(id){previousGoForCommunity(id);if(id==='community'){renderCommunityAccess();if(!communityLoaded){communityLoaded=true;loadCommunity()}}};
 const previousRenderAccount=renderAccount;
 renderAccount=function(){previousRenderAccount();renderCommunityAccess()};
+
+ 
+// Análise de crash: processamento local de TXT, LOG e PDF.
+let crashPdfPromise=null,crashReportText='';
+const crashFiles=$('#crash-files');
+if(crashFiles)crashFiles.addEventListener('change',()=>{
+ const files=[...(crashFiles.files||[])];
+ $('#crash-file-list').textContent=files.length?files.map(f=>f.name+' ('+(f.size/1024/1024).toFixed(2)+' MB)').join(' · '):'Nenhum arquivo selecionado.';
+});
+function loadPdfEngine(){
+ if(window.pdfjsLib)return Promise.resolve(window.pdfjsLib);
+ if(crashPdfPromise)return crashPdfPromise;
+ crashPdfPromise=new Promise((resolve,reject)=>{
+  const script=document.createElement('script');script.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+  script.onload=()=>{if(!window.pdfjsLib)return reject(Error('Biblioteca de leitura de PDF indisponível.'));window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';resolve(window.pdfjsLib)};
+  script.onerror=()=>reject(Error('Não foi possível carregar o leitor de PDF. Confira sua conexão e tente novamente.'));
+  document.head.appendChild(script);
+ });
+ return crashPdfPromise;
+}
+async function extractCrashFile(file){
+ const ext=file.name.toLowerCase().split('.').pop();
+ if(!['txt','log','pdf'].includes(ext))throw Error(file.name+': formato não aceito.');
+ if(file.size>20*1024*1024)throw Error(file.name+': arquivo maior que 20 MB.');
+ if(ext!=='pdf'){
+  const text=await file.text();
+  if(text.length>2*1024*1024)throw Error(file.name+': texto excede 2 MB.');
+  return text;
+ }
+ const pdfjs=await loadPdfEngine(),buffer=await file.arrayBuffer(),pdf=await pdfjs.getDocument({data:buffer}).promise;
+ if(pdf.numPages>100)throw Error(file.name+': PDF com mais de 100 páginas.');
+ let out='';
+ for(let pageNo=1;pageNo<=pdf.numPages;pageNo++){
+  const page=await pdf.getPage(pageNo),content=await page.getTextContent();
+  out+='\n--- Página '+pageNo+' ---\n'+content.items.map(item=>item.str||'').join(' ')+'\n';
+  if(out.length>2*1024*1024)throw Error(file.name+': texto extraído excede 2 MB.');
+ }
+ if(!out.trim())throw Error(file.name+': não foi possível extrair texto. O PDF pode ser digitalizado como imagem.');
+ return out;
+}
+function diagnoseCrash(text){
+ const rules=[
+  {name:'Memória insuficiente',level:'warning',re:/OutOfMemoryError|Java heap space|GC overhead limit exceeded|Could not reserve enough space|Failed to allocate/i,why:'A JVM ou o processo não conseguiu reservar memória suficiente.',fix:'Reduza a quantidade de mods e a distância de renderização; confira a memória alocada e feche apps em segundo plano.'},
+  {name:'Dependência ou classe ausente',level:'error',re:/NoClassDefFoundError|ClassNotFoundException|Missing .* dependency|requires .* but/i,why:'Uma classe ou dependência necessária não foi encontrada.',fix:'Confira a dependência exigida e instale uma versão compatível com seu Minecraft e modloader.'},
+  {name:'Conflito entre mods',level:'warning',re:/Mixin apply failed|DuplicateModsFoundException|ModLoadingException|mod .* failed to load|MixinTransformerError/i,why:'Um mod falhou ao carregar ou houve conflito durante a transformação de classes.',fix:'Compare os mods citados no trecho do erro; teste removendo ou atualizando o mod apontado.'},
+  {name:'Versão incompatível',level:'warning',re:/UnsupportedClassVersionError|requires Minecraft|incompatible.*version|wrong version|not a valid mod/i,why:'Pode haver incompatibilidade entre a versão do mod, Minecraft, Java ou loader.',fix:'Confirme que todos os mods foram feitos para a mesma versão do Minecraft e loader.'},
+  {name:'Falha gráfica ou OpenGL',level:'warning',re:/OpenGL error|GL_INVALID|GL_OUT_OF_MEMORY|Failed to create.*context|Renderer .*failed|shader.*compile/i,why:'O renderizador, driver gráfico ou shader pode ter falhado.',fix:'Desative shaders e recursos gráficos avançados; teste outro renderizador compatível e atualize os componentes do launcher.'},
+  {name:'Falha ao acessar arquivo',level:'warning',re:/AccessDeniedException|Permission denied|FileNotFoundException|NoSuchFileException/i,why:'O jogo não conseguiu acessar um arquivo ou diretório.',fix:'Verifique se o arquivo existe, se não está corrompido e se o launcher tem permissão de acesso.'},
+  {name:'Erro de Java',level:'error',re:/Unsupported Java|Java version|java\.lang\.VerifyError|InternalError/i,why:'A versão ou execução do Java pode ser incompatível.',fix:'Use a versão Java exigida pelo Minecraft e pelos mods instalados.'},
+  {name:'Falha de conexão',level:'info',re:/UnknownHostException|Connection timed out|ConnectException|Failed to download/i,why:'O jogo ou launcher não conseguiu acessar um serviço remoto.',fix:'Verifique a conexão e tente novamente; confira se o endereço remoto está correto.'}
+ ];
+ const found=rules.filter(rule=>rule.re.test(text));
+ const lines=text.split(/\r?\n/),important=lines.filter(line=>/\b(Caused by:|Exception|Error|FATAL|CRITICAL)\b/i.test(line)).slice(0,18);
+ return {found,important,lines:lines.length};
+}
+$('#crash-analyze').onclick=async()=>{
+ const files=[...(crashFiles.files||[])],button=$('#crash-analyze'),report=$('#crash-report'),content=$('#crash-report-content');
+ if(!files.length)return toast('Selecione pelo menos um arquivo TXT, LOG ou PDF.');
+ if(files.length>3)return toast('Selecione no máximo 3 arquivos por análise.');
+ button.disabled=true;button.textContent='Lendo e analisando…';report.hidden=false;content.innerHTML='<p class="hint">Analisando os arquivos neste aparelho…</p>';
+ try{
+  const results=[];
+  for(const file of files){const text=await extractCrashFile(file);results.push({name:file.name,...diagnoseCrash(text)})}
+  const total=results.reduce((n,r)=>n+r.found.length,0);
+  let output='ANÁLISE DE CRASH — MODPACK HUB\nArquivos: '+results.length+'\n\n';
+  for(const r of results){output+='ARQUIVO: '+r.name+'\nLinhas extraídas: '+r.lines+'\n';
+   if(!r.found.length)output+='Nenhum padrão conhecido de erro foi identificado. Isso não garante que o log esteja livre de problemas.\n';
+   for(const item of r.found)output+='['+item.level.toUpperCase()+'] '+item.name+'\nPossível causa: '+item.why+'\nSugestão: '+item.fix+'\n';
+   if(r.important.length)output+='Trechos importantes:\n'+r.important.map(x=>'• '+x.slice(0,500)).join('\n')+'\n';
+   output+='\n';
+  }
+  output+='\nObservação: diagnóstico automático por padrões. Confirme a causa com o log completo e as versões dos mods.';
+  crashReportText=output;
+  content.innerHTML=results.map(r=>'<article class="crash-result"><h3>'+esc(r.name)+'</h3><p>'+r.lines+' linhas analisadas</p>'+(r.found.length?r.found.map(x=>'<div class="crash-finding"><b>'+esc(x.name)+'</b><p>'+esc(x.why)+'</p><small>Sugestão: '+esc(x.fix)+'</small></div>').join(''):'<p class="hint">Nenhum erro conhecido identificado.</p>')+(r.important.length?'<details><summary>Ver trechos importantes do log</summary><pre>'+esc(r.important.join('\n'))+'</pre></details>':'')+'</article>').join('')+'<p class="hint">A análise é indicativa e pode não encontrar erros novos ou específicos.</p>';
+  toast(total?total+' tipo(s) de erro encontrados.':'Análise concluída.');
+ }catch(error){content.innerHTML='<p class="hint">'+esc(error.message)+'</p>';crashReportText='Falha na análise: '+error.message;toast(error.message)}
+ finally{button.disabled=false;button.textContent='Analisar arquivos'}
+};
+$('#crash-copy').onclick=()=>{if(!crashReportText)return toast('Nenhum relatório disponível.');navigator.clipboard?.writeText(crashReportText).then(()=>toast('Relatório copiado.')).catch(()=>toast('Não foi possível copiar automaticamente.'))};
