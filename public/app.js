@@ -146,10 +146,15 @@ async function accountRequest(path,options={}) {
  return data;
 }
 function renderAccount(){
- const state=$('#account-state'),forms=$('#account-forms'),logout=$('#account-logout'),pull=$('#account-sync-pull'),push=$('#account-sync-push');
- if(hubAccount?.offline){state.textContent='Conta offline: '+hubAccount.name+' · não sincroniza com a nuvem.';forms.hidden=true;logout.hidden=false;pull.disabled=true;push.disabled=true}
- else if(hubAccount){state.textContent='Conectado como '+hubAccount.name+' ('+hubAccount.email+').'; forms.hidden=true;logout.hidden=false;pull.disabled=false;push.disabled=false}
- else{state.textContent='Você está usando a biblioteca local. Crie uma conta online ou offline.';forms.hidden=false;logout.hidden=true;pull.disabled=true;push.disabled=true}
+ const state=$('#account-state'),forms=$('#account-forms'),profile=$('#account-profile'),logout=$('#account-logout');
+ if(hubAccount){
+  state.textContent=(hubAccount.offline?'Conta offline: ':'Conectado como ')+(hubAccount.username||hubAccount.name)+(hubAccount.offline?' · salva somente neste aparelho.':'');
+  forms.hidden=true;profile.hidden=false;logout.hidden=false;
+  $('#account-new-name').value=hubAccount.username||hubAccount.name||'';
+ }else{
+  state.textContent='Você está usando a biblioteca local. Crie uma conta online ou offline.';
+  forms.hidden=false;profile.hidden=true;logout.hidden=true;
+ }
 }
 const offlineAccountKey='mikael-hub-offline-account';
 async function refreshAccount(){
@@ -165,6 +170,24 @@ async function submitAccount(mode){
  }catch(error){toast(error.message)}
 }
 $('#account-offline').onclick=()=>{const name=$('#offline-account-name').value.trim().toLowerCase();if(!/^[a-z0-9_]{3,20}$/.test(name))return toast('Use de 3 a 20 caracteres: letras, números e _.');hubAccount={name,username:name,offline:true};localStorage.setItem(offlineAccountKey,JSON.stringify(hubAccount));renderAccount();renderCommunityAccess();toast('Conta offline criada neste aparelho.')};
+$('#account-change-name').onclick=async()=>{
+ const name=$('#account-new-name').value.trim().toLowerCase();
+ if(!/^[a-z0-9_]{3,20}$/.test(name))return toast('Use 3 a 20 caracteres: letras, números e _.');
+ if(!hubAccount)return toast('Entre na sua conta primeiro.');
+ if(name===(hubAccount.username||hubAccount.name))return toast('Esse já é seu nome.');
+ const button=$('#account-change-name');button.disabled=true;
+ try{
+  if(hubAccount.offline){
+   hubAccount={...hubAccount,name,username:name};
+   localStorage.setItem(offlineAccountKey,JSON.stringify(hubAccount));
+  }else{
+   const data=await accountRequest('/profile/username',{method:'PATCH',body:JSON.stringify({username:name})});
+   hubAccount=data.user;
+  }
+  renderAccount();renderCommunityAccess();await loadCommunity();toast('Nome alterado com sucesso.');
+ }catch(error){toast(error.message)}
+ finally{button.disabled=false}
+};
 $('#account-register').onclick=()=>submitAccount('/register');
 $('#account-login').onclick=()=>submitAccount('/login');
 $('#account-logout').onclick=async()=>{try{if(hubAccount?.offline)localStorage.removeItem(offlineAccountKey);else await accountRequest('/logout',{method:'POST',body:'{}'});hubAccount=null;renderAccount();renderCommunityAccess();toast('Sessão encerrada.')}catch(error){toast(error.message)}};
