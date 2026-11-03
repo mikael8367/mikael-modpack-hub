@@ -15,20 +15,36 @@ app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json({ limit: '2mb' }));
-app.use(rateLimit({ windowMs: 60000, limit: 90, standardHeaders: true, legacyHeaders: false }));
+app.use(rateLimit({ windowMs: 5 * 60 * 1000, limit: 300, standardHeaders: true, legacyHeaders: false, handler: (_req,res) => res.status(429).json({error:'Limite temporário de requisições do Hub. Aguarde alguns minutos e tente novamente.'}) }));
 app.use(express.static(path.join(root, 'public')));
 app.use('/api/auth', createAuthRouter());
 
 const clean = (v,n=120) => typeof v === 'string' ? v.trim().slice(0,n) : '';
 const limit = (v,d=20) => Math.max(1,Math.min(50,Number.parseInt(v,10)||d));
+let providerRequestAt = 0;
+const wait = ms => new Promise(resolve => setTimeout(resolve,ms));
 async function getJson(url, headers={}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12000);
-  try {
-    const r = await fetch(url,{headers,signal:controller.signal,redirect:'error'});
-    if (!r.ok) throw Object.assign(new Error('Provider HTTP '+r.status),{status:r.status});
-    return await r.json();
-  } finally { clearTimeout(timer); }
+  let lastError;
+  for (let attempt=0; attempt<4; attempt++) {
+    const pause = Math.max(0, 500 - (Date.now() - providerRequestAt));
+    if (pause) await wait(pause);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      providerRequestAt = Date.now();
+      const r = await fetch(url,{headers,signal:controller.signal,redirect:'error'});
+      if (r.status === 429 || r.status === 503) {
+        const retryAfter = Number(r.headers.get('retry-after'));
+        const delay = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(30000,retryAfter*1000) : Math.min(12000,1000*(2**attempt));
+        lastError = Object.assign(new Error('Provider HTTP '+r.status),{status:r.status});
+        if (attempt < 3) { await wait(delay); continue; }
+        throw lastError;
+      }
+      if (!r.ok) throw Object.assign(new Error('Provider HTTP '+r.status),{status:r.status});
+      return await r.json();
+    } finally { clearTimeout(timer); }
+  }
+  throw lastError || new Error('Falha ao consultar provedor.');
 }
 const cfHeaders = () => process.env.CURSEFORGE_API_KEY ? {'x-api-key':process.env.CURSEFORGE_API_KEY,'Accept':'application/json'} : null;
 const mrHeaders = {'User-Agent':'MikaelModpackHub/1.0 (modpack discovery)','Accept':'application/json'};
