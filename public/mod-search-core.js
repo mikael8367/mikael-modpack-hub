@@ -1,8 +1,8 @@
 (() => {
   'use strict';
 
-  // Grupos de títulos equivalentes usados pelos catálogos.
-  // Aliases curtos são aceitos somente por igualdade exata para evitar falsos positivos.
+  // Aliases são relações explícitas entre títulos do mesmo projeto.
+  // Não inclua aqui projetos complementares ou addons independentes.
   const ALIAS_GROUPS = [
     ['jei', 'Just Enough Items'],
     ['hwyla', "Here's What You're Looking At"],
@@ -27,6 +27,8 @@
     ['entityculling', 'Entity Culling'],
     ['culleaves', 'Cull Leaves'],
     ['smoothboot', 'Smooth Boot'],
+    ['vanillafix', 'Vanilla Fix'],
+    ['extremereactors', 'Extreme Reactors 2'],
     ['ftblibrary', 'FTB Library'],
     ['ftbutilities', 'FTB Utilities'],
     ['ftbbackups', 'FTB Backups'],
@@ -51,63 +53,88 @@
     return [...new Set([value, ...group].filter(Boolean))];
   }
 
-  function editSimilarity(first, second) {
-    if (!first || !second) return 0;
-    if (first === second) return 1;
+  // Distância Damerau-Levenshtein restrita: além de inserção, remoção e
+  // substituição, reconhece troca de letras vizinhas (erro comum no celular).
+  function damerauLevenshtein(first, second) {
+    if (first === second) return 0;
+    if (!first || !second) return Math.max(first.length, second.length);
     const rows = second.length + 1;
     const cols = first.length + 1;
-    let previous = Array.from({ length: cols }, (_, index) => index);
+    const matrix = Array.from({ length: rows }, () => Array(cols).fill(0));
+    for (let row = 0; row < rows; row++) matrix[row][0] = row;
+    for (let col = 0; col < cols; col++) matrix[0][col] = col;
+
     for (let row = 1; row < rows; row++) {
-      const current = [row];
       for (let col = 1; col < cols; col++) {
-        const cost = second.charCodeAt(row - 1) === first.charCodeAt(col - 1) ? 0 : 1;
-        current[col] = Math.min(
-          current[col - 1] + 1,
-          previous[col] + 1,
-          previous[col - 1] + cost
+        const cost = second[row - 1] === first[col - 1] ? 0 : 1;
+        matrix[row][col] = Math.min(
+          matrix[row - 1][col] + 1,
+          matrix[row][col - 1] + 1,
+          matrix[row - 1][col - 1] + cost
         );
+        if (row > 1 && col > 1 &&
+            second[row - 1] === first[col - 2] &&
+            second[row - 2] === first[col - 1]) {
+          matrix[row][col] = Math.min(
+            matrix[row][col],
+            matrix[row - 2][col - 2] + 1
+          );
+        }
       }
-      previous = current;
     }
-    return 1 - previous[cols - 1] / Math.max(first.length, second.length);
+    return matrix[rows - 1][cols - 1];
   }
 
   function projectNames(project) {
-    return [project && project.title, project && project.name, project && project.slug]
+    const display = [project && project.title, project && project.name]
       .filter(Boolean)
-      .map((value) => ({ value: String(value), normalized: normalizeName(value) }))
+      .map((value) => ({ value: String(value), normalized: normalizeName(value), field: 'title' }))
       .filter((entry) => entry.normalized);
+    const slug = project && project.slug
+      ? [{ value: String(project.slug), normalized: normalizeName(project.slug), field: 'slug' }]
+      : [];
+    return { display, slug };
   }
 
   function scoreProject(project, requestedName) {
-    const expected = aliasesFor(requestedName)
-      .map(normalizeName)
-      .filter(Boolean);
+    const expected = aliasesFor(requestedName).map(normalizeName).filter(Boolean);
     const names = projectNames(project);
-    if (!expected.length || !names.length) {
-      return { project, score: 0, exact: false, matchedName: '' };
+    if (!expected.length || (!names.display.length && !names.slug.length)) {
+      return { project, score: 0, exact: false, matchedName: '', matchType: 'none' };
     }
 
-    for (const candidate of names) {
+    // Título/nome exibido tem precedência sobre slug. Um slug igual não pode
+    // transformar "JEI Addons" em uma correspondência exata de "JEI".
+    for (const candidate of names.display) {
       if (expected.includes(candidate.normalized)) {
-        return { project, score: 1, exact: true, matchedName: candidate.value };
+        return { project, score: 1, exact: true, matchedName: candidate.value, matchType: 'title' };
+      }
+    }
+    if (!names.display.length) {
+      for (const candidate of names.slug) {
+        if (expected.includes(candidate.normalized)) {
+          return { project, score: 0.99, exact: true, matchedName: candidate.value, matchType: 'slug' };
+        }
       }
     }
 
-    // Correspondência aproximada serve apenas como sugestão. Nunca autoriza
-    // a instalação automática. Acrônimos curtos (JEI, AE2 etc.) não são fuzzy.
-    let best = { project, score: 0, exact: false, matchedName: '' };
+    // Fuzzy matching é exclusivamente uma sugestão manual. Siglas e nomes
+    // curtos não entram neste estágio, para evitar coincidências acidentais.
+    let best = { project, score: 0, exact: false, matchedName: '', matchType: 'none' };
+    const candidateNames = names.display.length ? names.display : names.slug;
     for (const wanted of expected) {
       if (wanted.length < 8) continue;
-      for (const candidate of names) {
-        const candidateName = candidate.normalized;
-        if (candidateName.length < 8) continue;
-        const maxLength = Math.max(wanted.length, candidateName.length);
-        const lengthDifference = Math.abs(wanted.length - candidateName.length);
-        if (lengthDifference > Math.max(2, Math.ceil(wanted.length * 0.18))) continue;
-        const score = editSimilarity(wanted, candidateName);
+      for (const candidate of candidateNames) {
+        const value = candidate.normalized;
+        if (value.length < 8) continue;
+        const maxLength = Math.max(wanted.length, value.length);
+        const maxEdits = maxLength <= 14 ? 1 : 2;
+        if (Math.abs(wanted.length - value.length) > maxEdits) continue;
+        const distance = damerauLevenshtein(wanted, value);
+        if (distance > maxEdits) continue;
+        const score = 1 - distance / maxLength;
         if (score > best.score) {
-          best = { project, score, exact: false, matchedName: candidate.value };
+          best = { project, score, exact: false, matchedName: candidate.value, matchType: 'fuzzy' };
         }
       }
     }
@@ -127,11 +154,15 @@
     const ranked = [...unique.values()]
       .map((project) => scoreProject(project, requestedName))
       .filter((entry) => entry.score > 0)
-      .sort((a, b) => b.score - a.score);
+      .sort((a, b) => {
+        if (a.exact !== b.exact) return a.exact ? -1 : 1;
+        if (a.score !== b.score) return b.score - a.score;
+        return Number(b.project.downloads || 0) - Number(a.project.downloads || 0);
+      });
 
     return {
       exact: ranked.filter((entry) => entry.exact),
-      suggestions: ranked.filter((entry) => !entry.exact && entry.score >= 0.72)
+      suggestions: ranked.filter((entry) => !entry.exact && entry.score >= 0.84)
     };
   }
 
@@ -139,6 +170,7 @@
     normalizeName,
     aliasesFor,
     scoreProject,
-    rankProjects
+    rankProjects,
+    damerauLevenshtein
   });
 })();
