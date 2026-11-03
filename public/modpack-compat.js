@@ -392,7 +392,7 @@
         ? 'Importação cancelada. ' + added + ' mod(s) adicionados foram mantidos.'
         : 'Concluído: ' + added + ' adicionado(s), ' + notFound +
           ' sem correspondência/arquivo compatível, ' + ambiguous +
-          ' com nome incerto (não adicionados), ' + duplicates + ' duplicado(s), de ' +
+          ' com nome incerto na busca automática (exigem confirmação), ' + duplicates + ' duplicado(s), de ' +
           names.length + ' nomes. ' +
           (fallbackCount ? fallbackCount + ' encontrado(s) no catálogo alternativo. ' : '') +
           'Revise as sugestões antes de baixar.';
