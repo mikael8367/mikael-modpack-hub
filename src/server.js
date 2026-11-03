@@ -11,12 +11,19 @@ import { createAuthRouter } from './auth.js';
 
 const app = express();
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json({ limit: '2mb' }));
-app.use(rateLimit({ windowMs: 5 * 60 * 1000, limit: 300, standardHeaders: true, legacyHeaders: false, handler: (_req,res) => res.status(429).json({error:'Limite temporário de requisições do Hub. Aguarde alguns minutos e tente novamente.'}) }));
 app.use(express.static(path.join(root, 'public')));
+app.use('/api', rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: 1200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req,res) => res.status(429).json({error:'Limite temporário de requisições do Hub. Aguarde alguns minutos e tente novamente.'})
+}));
 app.use('/api/auth', createAuthRouter());
 
 const clean = (v,n=120) => typeof v === 'string' ? v.trim().slice(0,n) : '';
