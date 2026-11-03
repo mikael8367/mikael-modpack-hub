@@ -24,52 +24,12 @@
 
   // Variações de títulos usados nos catálogos. IDs nunca são presumidos:
   // o Hub consulta os provedores e usa somente IDs retornados por eles.
-  const ALIASES = {
-    jei: ['Just Enough Items'],
-    hwyla: ["Here's What You're Looking At"],
-    netherportalfix: ['Nether Portal Fix'],
-    zerocore: ['ZeroCore 2', 'ZeroCore2'],
-    betterfps: ['Better FPS'],
-    fastworkbench: ['Fast Workbench'],
-    fastfurnace: ['Fast Furnace'],
-    memoryleakfix: ['Memory Leak Fix'],
-    connectedtexturesmod: ['Connected Textures Mod', 'CTM'],
-    "tinkers'construct": ['Tinkers Construct'],
-    tinkerscomplement: ["Tinkers' Complement"],
-    "tinkers'toolleveling": ['Tinkers Tool Leveling'],
-    "construct'sarmory": ['Constructs Armory'],
-    "brandon'score": ['Brandon Core'],
-    appliedenergistics2: ['AE2'],
-    extracells2: ['Extra Cells 2', 'ExtraCells 2'],
-    teslacorelib: ['Tesla Core Library'],
-    valkyrielib: ['Valkyrie Lib', 'Valkyrie Library'],
-    cucumberlibrary: ['Cucumber'],
-    mcjtylib: ['McJty Lib'],
-    entityculling: ['Entity Culling'],
-    culleaves: ['Cull Leaves'],
-    smoothboot: ['Smooth Boot'],
-    ftblibrary: ['FTB Library'],
-    ftbutilities: ['FTB Utilities'],
-    ftbbackups: ['FTB Backups'],
-    ftbquests: ['FTB Quests'],
-    projecteintegration: ['ProjectE Integration']
-  };
-
-  const normalize = (value) => String(value || '')
-    .toLocaleLowerCase('pt-BR')
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '');
-
-  function aliasesFor(name) {
-    const key = normalize(name);
-    for (const [canonical, aliases] of Object.entries(ALIASES)) {
-      if (normalize(canonical) === key || aliases.some((alias) => normalize(alias) === key)) {
-        return [...new Set([canonical, ...aliases])];
-      }
-    }
-    return [name];
+  const searchCore = window.MikaelModSearch;
+  if (!searchCore) {
+    throw new Error('O motor de busca preciso não foi carregado.');
   }
+  const normalize = searchCore.normalizeName;
+  const aliasesFor = searchCore.aliasesFor;
 
   function sameModName(first, second) {
     const firstNames = new Set(aliasesFor(first).map(normalize));
@@ -137,42 +97,54 @@
     throw lastError || new Error('Falha ao consultar o catálogo.');
   }
 
-  function projectNames(project) {
-    return [project && project.title, project && project.name, project && project.slug]
-      .filter(Boolean).map(normalize);
-  }
-
-  function matchingProjects(results, aliases) {
-    const expected = new Set(aliases.map(normalize));
-    return (results || [])
-      .map((project) => ({
-        project,
-        score: projectNames(project).some((value) => expected.has(value)) ? 100 : 0
-      }))
-      .filter((item) => item.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .map((item) => item.project);
-  }
-
   async function searchProjects(provider, name, signal) {
-    const aliases = aliasesFor(name);
+    const searchTerms = [...new Set(aliasesFor(name))].slice(0, 3);
     const candidates = new Map();
-    const searchTerms = [...new Set([name, ...aliases])].slice(0, 2);
+    const mergeResults = (data) => {
+      for (const project of data.results || []) {
+        if (project && project.id != null) candidates.set(String(project.id), project);
+      }
+    };
+    let ranked = searchCore.rankProjects([], name);
+
+    // Primeira passagem: pesquisa com filtros de versão e loader para priorizar
+    // resultados relevantes. Consulta aliases em vez de aceitar títulos parecidos.
     for (const term of searchTerms) {
       const params = new URLSearchParams({
         query: term,
-        limit: '20',
+        limit: '50',
         page: '0',
         sort: 'downloads_desc',
         type: 'mods',
         game_version: packConfig.minecraft_version
       });
-      if (packConfig.loader && packConfig.loader !== 'vanilla') params.set('loader', packConfig.loader);
+      if (packConfig.loader && packConfig.loader !== 'vanilla') {
+        params.set('loader', packConfig.loader);
+      }
       const data = await fetchJson('/api/' + provider + '/search?' + params.toString(), signal);
-      for (const project of matchingProjects(data.results, aliases)) candidates.set(String(project.id), project);
-      if (candidates.size) break;
+      mergeResults(data);
+      ranked = searchCore.rankProjects([...candidates.values()], name);
+      if (ranked.exact.length) break;
     }
-    return [...candidates.values()];
+
+    // Segunda passagem: alguns projetos antigos não aparecem quando o catálogo
+    // filtra a busca por loader/versão. A busca ampla só descobre candidatos;
+    // os arquivos continuam sujeitos à validação estrita abaixo.
+    if (!ranked.exact.length &&
+        (packConfig.minecraft_version || (packConfig.loader && packConfig.loader !== 'vanilla'))) {
+      const params = new URLSearchParams({
+        query: name,
+        limit: '50',
+        page: '0',
+        sort: 'downloads_desc',
+        type: 'mods'
+      });
+      const data = await fetchJson('/api/' + provider + '/search?' + params.toString(), signal);
+      mergeResults(data);
+      ranked = searchCore.rankProjects([...candidates.values()], name);
+    }
+
+    return ranked;
   }
 
   async function findCompatibleFile(provider, project, signal) {
@@ -210,16 +182,26 @@
   }
 
   async function findOnProvider(provider, name, signal) {
-    const candidates = await searchProjects(provider, name, signal);
-    if (!candidates.length) return { missing: true, reason: 'Projeto não encontrado com nome ou alias exato.' };
-    for (const project of candidates) {
+    const ranked = await searchProjects(provider, name, signal);
+    if (!ranked.exact.length) {
+      return {
+        missing: true,
+        reason: 'Nenhum título ou alias exato encontrado.',
+        suggestions: ranked.suggestions.slice(0, 3)
+      };
+    }
+
+    for (const match of ranked.exact) {
+      const project = match.project;
       const file = await findCompatibleFile(provider, project, signal);
       if (file) return { provider, project, file, versionName: file.name };
     }
+
     return {
       missing: true,
-      reason: 'O projeto existe, mas não publicou arquivo para Minecraft ' +
-        packConfig.minecraft_version + ' ' + packConfig.loader + '.'
+      reason: 'O projeto foi encontrado, mas não publicou arquivo confirmado para Minecraft ' +
+        packConfig.minecraft_version + ' ' + packConfig.loader + '.',
+      suggestions: ranked.suggestions.slice(0, 3)
     };
   }
 
@@ -241,8 +223,11 @@
         ' mods. O limite é 100 por modpack; divida a lista em duas partes.';
       return;
     }
-    if (selected.length + names.length > 100) {
-      status.textContent = 'Já existem ' + selected.length + ' mods selecionados. Com esta lista, o modpack ultrapassaria o limite total de 100. Remova alguns ou importe uma lista menor.';
+    const potentialAdds = names.filter((name) =>
+      !selected.some((current) => sameModName(current.name, name))
+    ).length;
+    if (selected.length + potentialAdds > 100) {
+      status.textContent = 'Já existem ' + selected.length + ' mods selecionados. Mesmo descontando os nomes que já estão no modpack, esta importação ultrapassaria o limite total de 100.';
       return;
     }
 
@@ -256,6 +241,7 @@
     let notFound = 0;
     let fallbackCount = 0;
     let duplicates = 0;
+    let ambiguous = 0;
     let interrupted = false;
     const preferred = packProvider === 'curseforge'
       ? ['curseforge', 'modrinth'] : ['modrinth', 'curseforge'];
@@ -268,6 +254,7 @@
           name + ' · ' + added + ' adicionados…';
         let found = null;
         const providerErrors = [];
+        const possibleMatches = [];
 
         for (const provider of preferred) {
           if (importCancelled || activeController.signal.aborted) break;
@@ -280,6 +267,14 @@
             }
             providerErrors.push((provider === 'curseforge' ? 'CurseForge' : 'Modrinth') +
               ': ' + result.reason);
+            for (const match of result.suggestions || []) {
+              possibleMatches.push({
+                provider,
+                id: String(match.project && match.project.id || ''),
+                title: match.project && (match.project.title || match.project.name || match.project.slug) || 'Projeto sem título',
+                score: Number(match.score) || 0
+              });
+            }
           } catch (error) {
             if (activeController.signal.aborted) break;
             providerErrors.push((provider === 'curseforge' ? 'CurseForge' : 'Modrinth') +
@@ -289,9 +284,23 @@
 
         if (importCancelled || activeController.signal.aborted) break;
         if (!found) {
-          notFound++;
-          addResult('✕ ' + name + ' — ' +
-            (providerErrors.join(' · ') || 'Nenhum resultado compatível.'), 'failed');
+          const uniqueSuggestions = [...new Map(
+            possibleMatches.map((match) => [match.provider + ':' + match.id, match])
+          ).values()].sort((a, b) => b.score - a.score);
+
+          if (uniqueSuggestions.length) {
+            ambiguous++;
+            const summary = uniqueSuggestions.slice(0, 3).map((match) =>
+              match.title + ' (' + Math.round(match.score * 100) + '% · ' +
+              (match.provider === 'curseforge' ? 'CurseForge' : 'Modrinth') + ')'
+            ).join('; ');
+            addResult('? ' + name + ' — possíveis correspondências, não adicionadas automaticamente: ' +
+              summary, 'ambiguous');
+          } else {
+            notFound++;
+            addResult('✕ ' + name + ' — ' +
+              (providerErrors.join(' · ') || 'Nenhum resultado compatível.'), 'failed');
+          }
           continue;
         }
 
@@ -326,9 +335,11 @@
       status.textContent = interrupted
         ? 'Importação cancelada. ' + added + ' mod(s) adicionados foram mantidos.'
         : 'Concluído: ' + added + ' adicionado(s), ' + notFound +
-          ' sem arquivo compatível, ' + duplicates + ' duplicado(s), de ' + names.length +
-          ' nomes. ' + (fallbackCount ? fallbackCount + ' encontrado(s) no catálogo alternativo. ' : '') +
-          'Revise o relatório antes de baixar.';
+          ' sem correspondência/arquivo compatível, ' + ambiguous +
+          ' com nome incerto (não adicionados), ' + duplicates + ' duplicado(s), de ' +
+          names.length + ' nomes. ' +
+          (fallbackCount ? fallbackCount + ' encontrado(s) no catálogo alternativo. ' : '') +
+          'Revise as sugestões antes de baixar.';
     } catch (error) {
       status.textContent = 'A importação foi interrompida: ' +
         (error.message || 'erro inesperado') + '. Os mods já adicionados foram mantidos.';
