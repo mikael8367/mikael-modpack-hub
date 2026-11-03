@@ -61,6 +61,47 @@ test('transposição de letras é reconhecida como sugestão', () => {
   assert.equal(search.damerauLevenshtein('mekansim', 'mekanism'), 1);
 });
 
+test('tokeniza nomes com apóstrofos como uma palavra', () => {
+  assert.deepEqual(search.tokenizeName("Better Builder's Wands"), ['better', 'builders', 'wands']);
+});
+
+test('detecta erro de digitação em um dos termos de nome composto', () => {
+  const result = search.rankProjects([
+    { id: '1', title: 'Applied Energistics 2' }
+  ], 'Applied Energetics 2');
+  assert.equal(result.exact.length, 0);
+  assert.equal(result.suggestions.length, 1);
+  assert.equal(result.suggestions[0].matchType, 'token-fuzzy');
+});
+
+test('detecta palavras fora de ordem como sugestão manual', () => {
+  const result = search.rankProjects([
+    { id: '1', title: 'Builder Wands Better' }
+  ], "Better Builder's Wands");
+  assert.equal(result.exact.length, 0);
+  assert.equal(result.suggestions.length, 1);
+  assert.equal(result.suggestions[0].matchType, 'token-fuzzy');
+});
+
+test('ignora sufixo genérico de catálogo apenas como sugestão', () => {
+  const result = search.rankProjects([{ id: '1', title: 'Mekanism Mod' }], 'Mekanism');
+  assert.equal(result.exact.length, 0);
+  assert.equal(result.suggestions.length, 1);
+});
+
+test('não sugere complementos como se fossem o mod-base', () => {
+  const cases = [
+    [{ id: '1', title: 'ProjectE Integration' }, 'ProjectE'],
+    [{ id: '2', title: 'Ender IO Endergy' }, 'Ender IO'],
+    [{ id: '3', title: 'Mekanism Generators' }, 'Mekanism'],
+    [{ id: '4', title: 'Draconic Additions' }, 'Draconic']
+  ];
+  for (const [project, requested] of cases) {
+    const result = search.rankProjects([project], requested);
+    assert.equal(result.suggestions.length, 0, project.title);
+  }
+});
+
 test('não confunde ProjectE com ProjectE Integration', () => {
   const result = search.rankProjects([
     { id: 'integration', title: 'ProjectE Integration', slug: 'projecte-integration' }
