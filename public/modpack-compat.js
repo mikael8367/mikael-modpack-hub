@@ -158,15 +158,7 @@
     throw lastError || new Error('Falha ao consultar o catálogo.');
   }
 
-  function catalogSlug(value) {
-    return String(value || '')
-      .toLocaleLowerCase('pt-BR')
-      .normalize('NFKD')
-      .replace(/[\\u0300-\\u036f]/g, '')
-      .replace(/['’`"]/g, '')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-  }
+  const catalogSlug = searchCore.slugifyName;
 
   async function searchProjects(provider, name, signal) {
     const searchTerms = [...new Set(aliasesFor(name))]
