@@ -74,7 +74,23 @@
         openVersionPicker(
           { id: match.id, title: match.title, name: match.title },
           match.provider,
-          'pack'
+          'pack',
+          (result) => {
+            if (result && result.duplicate) {
+              message.textContent = requestedName + ' — este mod já estava no modpack.';
+              row.classList.remove('ambiguous');
+              row.classList.add('duplicate');
+              actions.remove();
+              return;
+            }
+            if (result && result.item) {
+              message.textContent = requestedName + ' — adicionado manualmente como ' +
+                result.item.name + ' (' + result.item.version_name + ').';
+              row.classList.remove('ambiguous');
+              row.classList.add('success');
+              actions.remove();
+            }
+          }
         ).catch((error) => {
           message.textContent = 'Não foi possível conferir a sugestão: ' +
             (error.message || 'erro inesperado');
@@ -335,10 +351,6 @@
 
           if (uniqueSuggestions.length) {
             ambiguous++;
-            const summary = uniqueSuggestions.slice(0, 3).map((match) =>
-              match.title + ' (' + Math.round(match.score * 100) + '% · ' +
-              (match.provider === 'curseforge' ? 'CurseForge' : 'Modrinth') + ')'
-            ).join('; ');
             addSuggestionResult(name, uniqueSuggestions.slice(0, 3));
           } else {
             notFound++;
