@@ -45,6 +45,47 @@
     output.appendChild(row);
   }
 
+  function addSuggestionResult(requestedName, matches) {
+    const output = $('#bulk-import-results');
+    if (!output) return;
+    const row = document.createElement('div');
+    row.className = 'hint bulk-result ambiguous';
+
+    const message = document.createElement('p');
+    message.textContent = requestedName +
+      ' — não encontrei um título/alias exato. Confira uma destas opções antes de adicionar:';
+    row.appendChild(message);
+
+    const actions = document.createElement('div');
+    actions.className = 'bulk-suggestion-actions';
+    for (const match of matches.slice(0, 3)) {
+      if (!match.id) continue;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'secondary';
+      button.textContent = 'Conferir ' + match.title + ' (' +
+        Math.round(match.score * 100) + '% · ' +
+        (match.provider === 'curseforge' ? 'CurseForge' : 'Modrinth') + ')';
+      button.onclick = () => {
+        if (typeof openVersionPicker !== 'function') {
+          message.textContent = 'Abra a busca de mods para conferir esta sugestão manualmente.';
+          return;
+        }
+        openVersionPicker(
+          { id: match.id, title: match.title, name: match.title },
+          match.provider,
+          'pack'
+        ).catch((error) => {
+          message.textContent = 'Não foi possível conferir a sugestão: ' +
+            (error.message || 'erro inesperado');
+        });
+      };
+      actions.appendChild(button);
+    }
+    if (actions.childElementCount) row.appendChild(actions);
+    output.appendChild(row);
+  }
+
   function readNames(value) {
     const lines = String(value || '').split(/\r?\n/);
     const names = [];
@@ -57,7 +98,11 @@
         if (name) names.push(name);
       }
     }
-    return [...new Map(names.map((name) => [normalize(name), name])).values()];
+    const unique = [];
+    for (const name of names) {
+      if (!unique.some((existing) => sameModName(existing, name))) unique.push(name);
+    }
+    return unique;
   }
 
   async function readResponse(response) {
@@ -294,8 +339,7 @@
               match.title + ' (' + Math.round(match.score * 100) + '% · ' +
               (match.provider === 'curseforge' ? 'CurseForge' : 'Modrinth') + ')'
             ).join('; ');
-            addResult('? ' + name + ' — possíveis correspondências, não adicionadas automaticamente: ' +
-              summary, 'ambiguous');
+            addSuggestionResult(name, uniqueSuggestions.slice(0, 3));
           } else {
             notFound++;
             addResult('✕ ' + name + ' — ' +
