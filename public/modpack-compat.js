@@ -240,11 +240,15 @@
       if (ranked.exact.length) break;
     }
 
-    // Fase 2: alguns projetos antigos desaparecem dos resultados filtrados.
-    // A busca ampla apenas localiza candidatos; os arquivos continuam validados.
+    // Fase 2: projetos antigos podem não aparecer nos filtros de versão/loader.
+    // Amplia a busca em até três páginas por termo; os arquivos ainda são validados
+    // depois, então um resultado amplo nunca é instalado sem compatibilidade.
     if (!ranked.exact.length) {
       for (const term of searchTerms) {
-        ranked = await requestSearch(term, false);
+        for (let page = 0; page < 3; page++) {
+          ranked = await requestSearch(term, false, page);
+          if (ranked.exact.length) break;
+        }
         if (ranked.exact.length) break;
       }
     }
