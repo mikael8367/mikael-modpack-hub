@@ -116,6 +116,14 @@
           return { project, score: 0.99, exact: true, matchedName: candidate.value, matchType: 'slug' };
         }
       }
+    } else {
+      // Slug exato com título divergente é um sinal forte, mas exige revisão
+      // humana (ex.: addons com slug semelhante nunca são instalados sozinhos).
+      for (const candidate of names.slug) {
+        if (expected.includes(candidate.normalized)) {
+          return { project, score: 0.96, exact: false, matchedName: candidate.value, matchType: 'slug-review' };
+        }
+      }
     }
 
     // Fuzzy matching é exclusivamente uma sugestão manual. Siglas e nomes
