@@ -167,9 +167,9 @@
   const catalogSlug = searchCore.slugifyName;
 
   async function searchProjects(provider, name, signal) {
-    const searchTerms = [...new Set(aliasesFor(name))]
-      .filter(Boolean)
-      .slice(0, 2);
+    const allAliases = [...new Set(aliasesFor(name))].filter(Boolean);
+    const searchTerms = allAliases.slice(0, 2);
+    const slugTerms = [...new Set(allAliases.map(catalogSlug).filter(Boolean))];
     const candidates = new Map();
     const mergeResults = (data) => {
       for (const project of data.results || []) {
@@ -181,7 +181,7 @@
     // Modrinth aceita slug na rota de consulta do projeto. Fazemos esta
     // tentativa determinística antes da pesquisa textual do catálogo.
     if (provider === 'modrinth') {
-      const slugs = [...new Set(searchTerms.map(catalogSlug).filter(Boolean))];
+      const slugs = slugTerms;
       for (const slug of slugs) {
         try {
           const data = await fetchJson(
@@ -203,7 +203,7 @@
     // CurseForge oferece busca direta por slug (junto de classId), mais precisa
     // que uma busca textual ampla. Slug nunca substitui a validação do título/arquivo.
     if (provider === 'curseforge') {
-      const slugs = [...new Set(searchTerms.map(catalogSlug).filter(Boolean))];
+      const slugs = slugTerms;
       for (const slug of slugs) {
         const params = new URLSearchParams({ slug, limit: '50', page: '0', type: 'mods' });
         const data = await fetchJson('/api/curseforge/search?' + params.toString(), signal);
