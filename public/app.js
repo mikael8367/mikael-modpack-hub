@@ -74,7 +74,7 @@ function renderPagination(){const el=$('#pagination');if(!el)return;el.innerHTML
 let modalProject=null,modalProvider=null,modalMode='pack',modalPackConfig=null,availableFiles=[],modalOnAdded=null;
 function modNamesEquivalent(first,second){
  const matcher=window.MikaelModSearch;
- const normalize=matcher?.normalizeName||((value)=>String(value||'').toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g,'').replace(/[^a-z0-9]+/g,''));
+ const normalize=matcher?.normalizeName||((value)=>String(value||'').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g,''));
  const aliases=matcher?.aliasesFor||((value)=>[value]);
  const expected=new Set(aliases(first).map(normalize));
  return aliases(second).some((value)=>expected.has(normalize(value)));
