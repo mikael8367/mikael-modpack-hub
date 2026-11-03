@@ -114,6 +114,55 @@ $('#modal-close').onclick=()=>$('#version-modal').hidden=true;
 $('#version-modal').onclick=e=>{if(e.target===$('#version-modal'))$('#version-modal').hidden=true};
 $('#modal-add').onclick=async()=>{const file=availableFiles.find(v=>String(v.id)===$('#modal-file').value);if(!file)return;if(modalMode==='download'){const button=$('#modal-add');button.disabled=true;button.textContent='Preparando download…';try{let url=modalProvider==='modrinth'?(file.raw?.files||[]).find(x=>x.primary)?.url||(file.raw?.files||[])[0]?.url:file.raw?.downloadUrl;if(!url&&modalProvider==='curseforge'){const r=await fetch('/api/curseforge/mod/'+encodeURIComponent(modalProject.id)+'/files/'+encodeURIComponent(file.id)+'/download-url');const d=await r.json();if(!r.ok)throw Error(d.error||'Não foi possível obter o link de download.');url=d.url;}const parsed=new URL(url);if(parsed.protocol!=='https:')throw Error('Link de download inseguro ou inválido.');const a=document.createElement('a');a.href=parsed.href;a.target='_blank';a.rel='noopener';a.download=file.raw?.filename||file.raw?.fileName||'';document.body.appendChild(a);a.click();a.remove();$('#version-modal').hidden=true;toast('Download iniciado. Confira os downloads do navegador.');}catch(e){toast(e.message||'Falha ao iniciar download.');button.disabled=false;button.textContent='Baixar mod';}return;}const chosenGameVersion=$('#modal-game-version').value||((file.game_versions||file.gameVersions||[]).find(x=>/^\d+\.\d+(\.\d+)?$/.test(x))||'');const chosenLoader=$('#modal-loader').value||((file.loaders||[]).find(x=>['fabric','forge','neoforge','quilt'].includes(String(x).toLowerCase()))||'');if(modalPackConfig&&(!chosenGameVersion||chosenGameVersion!==modalPackConfig.minecraft_version)){toast('Este arquivo não corresponde à versão Minecraft do modpack.');return}if(modalPackConfig&&modalPackConfig.loader!=='vanilla'&&chosenLoader!==modalPackConfig.loader){toast('Este arquivo não corresponde ao modloader do modpack.');return}const item={provider:modalProvider,id:String(modalProject.id),name:modalProject.title||modalProject.name,version_id:String(file.id),version_name:file.name||file.version_number||file.displayName||file.fileName,game_version:chosenGameVersion,loader:chosenLoader};if(selected.some(x=>x.provider===item.provider&&x.id===item.id&&x.version_id===item.version_id))return toast('Essa versão já foi adicionada.');selected.push(item);draw();$('#version-modal').hidden=true;drawPackSelection();toast('Versão adicionada ao modpack.')};
 
+
+async function addModsFromText(){
+ if(!packConfig)return toast('Configure primeiro o modpack.');
+ const raw=$('#bulk-mod-list').value;
+ const names=[...new Set(raw.split(/[\\r\\n,;]+/).map(x=>x.trim()).filter(Boolean))];
+ const status=$('#bulk-import-status'),output=$('#bulk-import-results'),button=$('#bulk-add-mods');
+ if(!names.length){status.textContent='Cole pelo menos um nome de mod.';return}
+ if(names.length>80){status.textContent='Limite de 80 mods por operação.';return}
+ button.disabled=true;output.innerHTML='';let added=0,failed=[];
+ status.textContent='Pesquisando '+names.length+' mods em '+(packProvider==='curseforge'?'CurseForge':'Modrinth')+'…';
+ const loader=packConfig.loader==='vanilla'?'':packConfig.loader;
+ for(let index=0;index<names.length;index++){
+  const name=names[index];status.textContent='('+ (index+1)+'/'+names.length+') Procurando '+name+'…';
+  try{
+   const params=new URLSearchParams({query:name,limit:'10',page:'0',sort:'downloads_desc',type:'mods',game_version:packConfig.minecraft_version});
+   if(loader)params.set('loader',loader);
+   const searchResponse=await fetch('/api/'+packProvider+'/search?'+params),searchData=await searchResponse.json();
+   if(!searchResponse.ok)throw Error(searchData.error||'Falha na pesquisa');
+   const candidates=searchData.results||[];
+   const normalize=value=>String(value||'').toLocaleLowerCase('pt-BR').replace(/[^a-z0-9]+/g,'').trim();
+   const project=candidates.find(x=>normalize(x.title||x.name)===normalize(name))||candidates[0];
+   if(!project)throw Error('Projeto não encontrado');
+   let file=null,versionName='';
+   if(packProvider==='modrinth'){
+    const vr=await fetch('/api/modrinth/project/'+encodeURIComponent(project.id)+'/versions?game_version='+encodeURIComponent(packConfig.minecraft_version)+(loader?'&loader='+encodeURIComponent(loader):'')),vd=await vr.json();
+    if(!vr.ok)throw Error(vd.error||'Falha ao consultar versões');
+    const compatible=(vd.versions||[]).filter(v=>(v.game_versions||[]).includes(packConfig.minecraft_version)&&(packConfig.loader==='vanilla'||(v.loaders||[]).includes(packConfig.loader)));
+    const chosen=compatible[0],asset=chosen?.files?.find(x=>x.primary)||chosen?.files?.[0];
+    if(!chosen||!asset)throw Error('Sem arquivo '+packConfig.minecraft_version+' '+packConfig.loader);
+    file={id:String(chosen.id),name:chosen.name||chosen.version_number};versionName=file.name;
+   }else{
+    const fp=new URLSearchParams({limit:'50',game_version:packConfig.minecraft_version});if(loader)fp.set('loader',loader);
+    const fr=await fetch('/api/curseforge/mod/'+encodeURIComponent(project.id)+'/files?'+fp),fd=await fr.json();
+    if(!fr.ok)throw Error(fd.error||'Falha ao consultar arquivos');
+    const chosen=(fd.files||[]).find(f=>(f.gameVersions||[]).includes(packConfig.minecraft_version)&&(packConfig.loader==='vanilla'||(f.loaders||[]).includes(packConfig.loader)));
+    if(!chosen)throw Error('Sem arquivo '+packConfig.minecraft_version+' '+packConfig.loader);
+    file={id:String(chosen.id),name:chosen.displayName||chosen.fileName};versionName=file.name;
+   }
+   const item={provider:packProvider,id:String(project.id),name:project.title||project.name||name,version_id:file.id,version_name:versionName,game_version:packConfig.minecraft_version,loader:packConfig.loader==='vanilla'?'':packConfig.loader};
+   if(selected.some(x=>x.provider===item.provider&&x.id===item.id))throw Error('Já está no modpack');
+   selected.push(item);added++;draw();
+   output.insertAdjacentHTML('beforeend','<div class="hint">✓ '+esc(item.name)+' — '+esc(versionName)+'</div>');
+  }catch(error){failed.push(name+': '+(error.message||'erro'));output.insertAdjacentHTML('beforeend','<div class="hint">✕ '+esc(name)+' — '+esc(error.message||'não encontrado')+'</div>')}
+ }
+ drawPackSelection();status.textContent='Concluído: '+added+' adicionado(s), '+failed.length+' não adicionado(s). Revise a lista e toque em Baixar modpack.';
+ button.disabled=false;
+}
+$('#bulk-add-mods').onclick=addModsFromText;
+
 function add(m,provider){openVersionPicker(m,provider)}
 function draw(){const el=$('#selected');if(!el)return;if(!selected.length){el.className='selected empty';el.textContent='Nenhum mod selecionado.';drawPackSelection();return}el.className='selected';el.innerHTML=selected.map((p,i)=>'<div class="selected-item"><span>'+esc(p.name)+' <small>('+p.provider+' · '+esc(p.version_name||'versão não definida')+')</small></span><button data-remove="'+i+'">Remover</button></div>').join('');document.querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>{selected.splice(Number(b.dataset.remove),1);draw()});drawPackSelection()}
 let packConfig=null,packProvider='modrinth',packRequest=0,packCatalog=[],packPage=0,packTotal=0;
