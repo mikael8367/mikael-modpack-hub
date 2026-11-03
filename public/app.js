@@ -131,6 +131,7 @@ async function addModsFromText(){
  status.textContent='Lista reconhecida: '+names.length+' mods. Iniciando pesquisa…';
  const loader=packConfig.loader==='vanilla'?'':packConfig.loader;
  const normalize=value=>String(value||'').toLocaleLowerCase('pt-BR').replace(/[^a-z0-9]+/g,'').trim();
+ const readPayload=async response=>{const body=await response.text();try{return JSON.parse(body)}catch{throw Error(response.status===429?'Limite de requisições atingido. O Hub vai precisar aguardar antes de continuar.':'Resposta inválida do servidor (HTTP '+response.status+'): '+body.slice(0,100))}};
  try{
   for(let index=0;index<names.length;index++){
    const name=names[index];
@@ -139,7 +140,7 @@ async function addModsFromText(){
     const params=new URLSearchParams({query:name,limit:'10',page:'0',sort:'downloads_desc',type:'mods',game_version:packConfig.minecraft_version});
     if(loader)params.set('loader',loader);
     const searchResponse=await fetch('/api/'+packProvider+'/search?'+params);
-    const searchData=await searchResponse.json();
+    const searchData=await readPayload(searchResponse);
     if(!searchResponse.ok)throw Error(searchData.error||'Falha na pesquisa');
     const candidates=searchData.results||[];
     const project=candidates.find(x=>normalize(x.title||x.name)===normalize(name))||candidates[0];
@@ -147,7 +148,7 @@ async function addModsFromText(){
     let file=null,versionName='';
     if(packProvider==='modrinth'){
      const vr=await fetch('/api/modrinth/project/'+encodeURIComponent(project.id)+'/versions?game_version='+encodeURIComponent(packConfig.minecraft_version)+(loader?'&loader='+encodeURIComponent(loader):''));
-     const vd=await vr.json();
+     const vd=await readPayload(vr);
      if(!vr.ok)throw Error(vd.error||'Falha ao consultar versões');
      const compatible=(vd.versions||[]).filter(v=>(v.game_versions||[]).includes(packConfig.minecraft_version)&&(packConfig.loader==='vanilla'||(v.loaders||[]).includes(packConfig.loader)));
      const chosen=compatible[0],asset=chosen?.files?.find(x=>x.primary)||chosen?.files?.[0];
@@ -157,7 +158,7 @@ async function addModsFromText(){
      const fp=new URLSearchParams({limit:'50',game_version:packConfig.minecraft_version});
      if(loader)fp.set('loader',loader);
      const fr=await fetch('/api/curseforge/mod/'+encodeURIComponent(project.id)+'/files?'+fp);
-     const fd=await fr.json();
+     const fd=await readPayload(fr);
      if(!fr.ok)throw Error(fd.error||'Falha ao consultar arquivos');
      const chosen=(fd.files||[]).find(f=>(f.gameVersions||[]).includes(packConfig.minecraft_version)&&(packConfig.loader==='vanilla'||(f.loaders||[]).includes(packConfig.loader)));
      if(!chosen)throw Error('Sem arquivo compatível com '+packConfig.minecraft_version+' '+packConfig.loader);
