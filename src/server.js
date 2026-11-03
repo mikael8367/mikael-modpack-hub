@@ -63,7 +63,7 @@ app.use('/api',(req,res,next)=>{
 app.get('/api/modrinth/search',async(req,res)=>{
   try{
     const q=clean(req.query.query,100);
-    const url=new URL('https://api.modrinth.com/v2/search');url.searchParams.set('query',q);const sort=clean(req.query.sort,20),ascending=sort==='downloads_asc'||sort==='date_asc';url.searchParams.set('index',sort.startsWith('date_')?'newest':'downloads');url.searchParams.set('limit',String(limit(req.query.limit)));url.searchParams.set('offset',String(Math.max(0,Math.min(100000,Number.parseInt(req.query.page,10)||0))*limit(req.query.limit)));
+    const url=new URL('https://api.modrinth.com/v2/search');url.searchParams.set('query',q);const sort=clean(req.query.sort,20);url.searchParams.set('index',sort==='relevance'?'relevance':sort.startsWith('date_')?'newest':'downloads');url.searchParams.set('limit',String(limit(req.query.limit)));url.searchParams.set('offset',String(Math.max(0,Math.min(100000,Number.parseInt(req.query.page,10)||0))*limit(req.query.limit)));
     const type=clean(req.query.type,20),projectType={mods:'mod',resourcepacks:'resourcepack',shaders:'shader',modpacks:'modpack'}[type]||'mod';
     const gv=clean(req.query.game_version,20),loader=clean(req.query.loader,20).toLowerCase(),facets=[];
     facets.push(['project_type:'+projectType]);if(gv&&projectType!=='modpack')facets.push(['versions:'+gv]);if(projectType==='mod'&&['fabric','forge','neoforge','quilt'].includes(loader))facets.push(['categories:'+loader]);
@@ -86,8 +86,9 @@ app.get('/api/modrinth/project/:id/versions',async(req,res)=>{
 });
 app.get('/api/curseforge/search',async(req,res)=>{
   const headers=cfHeaders();if(!headers)return res.status(503).json({error:'Configure CURSEFORGE_API_KEY nos Secrets do Render.'});
-  try{const q=clean(req.query.query,100),sort=clean(req.query.sort,20);
-    const url=new URL('https://api.curseforge.com/v1/mods/search');url.searchParams.set('gameId','432');const type=clean(req.query.type,20),classId={mods:6,resourcepacks:12,shaders:6552,modpacks:4471}[type]||6;url.searchParams.set('classId',String(classId));if(q)url.searchParams.set('searchFilter',q);const sortMap={downloads_desc:[6,'desc'],downloads_asc:[6,'asc'],date_desc:[3,'desc'],date_asc:[3,'asc']},chosen=sortMap[sort]||sortMap.downloads_desc;url.searchParams.set('sortField',String(chosen[0]));url.searchParams.set('sortOrder',chosen[1]);url.searchParams.set('pageSize',String(limit(req.query.limit,50)));url.searchParams.set('index',String(Math.max(0,Math.min(100000,Number.parseInt(req.query.page,10)||0))*limit(req.query.limit,50)));
+  try{const q=clean(req.query.query,100),slug=clean(req.query.slug,100),sort=clean(req.query.sort,20);
+    if(slug&&!/^[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(slug))return res.status(400).json({error:'Slug inválido.'});
+    const url=new URL('https://api.curseforge.com/v1/mods/search');url.searchParams.set('gameId','432');const type=clean(req.query.type,20),classId={mods:6,resourcepacks:12,shaders:6552,modpacks:4471}[type]||6;url.searchParams.set('classId',String(classId));if(slug)url.searchParams.set('slug',slug.toLowerCase());else if(q)url.searchParams.set('searchFilter',q);const sortMap={downloads_desc:[6,'desc'],downloads_asc:[6,'asc'],date_desc:[3,'desc'],date_asc:[3,'asc']},chosen=sortMap[sort]||sortMap.downloads_desc;url.searchParams.set('sortField',String(chosen[0]));url.searchParams.set('sortOrder',chosen[1]);url.searchParams.set('pageSize',String(limit(req.query.limit,50)));url.searchParams.set('index',String(Math.max(0,Math.min(100000,Number.parseInt(req.query.page,10)||0))*limit(req.query.limit,50)));
     const gv=clean(req.query.game_version,20);if(gv)url.searchParams.set('gameVersion',gv);
     const loader=clean(req.query.loader,20).toLowerCase(),loaderType={forge:1,fabric:4,quilt:5,neoforge:6}[loader];if(classId===6&&loaderType)url.searchParams.set('modLoaderType',String(loaderType));
     const d=await getJson(url,headers);res.json({provider:'curseforge',total:d.pagination?.totalCount||0,results:(d.data||[]).map(m=>({id:m.id,name:m.name,slug:m.slug,summary:m.summary,downloads:m.downloadCount,logo:m.logo?.url,websiteUrl:m.links?.websiteUrl}))});

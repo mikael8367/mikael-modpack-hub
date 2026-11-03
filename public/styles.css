@@ -138,3 +138,15 @@ body.tutorial-open{overflow:hidden}
 #ai-input{width:100%;resize:vertical;min-height:74px;background:transparent;color:var(--text);border:0;outline:none;font:inherit}
 .ai-composer-actions{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px}
 .ai-composer-actions button{min-height:42px}.ai-composer-actions .secondary{font-size:12px}
+
+
+/* Resultados do importador por texto: status visível sem esconder sugestões. */
+.bulk-import-card .bulk-result{padding:9px 10px;border:1px solid var(--line);border-radius:10px;overflow-wrap:anywhere;line-height:1.45}
+.bulk-import-card .bulk-result.success{border-color:#2d7c4b;color:#a5f4c1}
+.bulk-import-card .bulk-result.failed{border-color:#84464a;color:#ffc2c2}
+.bulk-import-card .bulk-result.duplicate{color:var(--muted)}
+.bulk-import-card .bulk-result.ambiguous{border-color:#927341;color:#f4d58b}
+
+.bulk-suggestion-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}
+.bulk-suggestion-actions button{min-height:38px;padding:8px 10px;font-size:12px;white-space:normal;text-align:left;overflow-wrap:anywhere}
+.bulk-import-card .bulk-result.ambiguous p{margin:0 0 7px;line-height:1.45}
