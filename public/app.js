@@ -120,6 +120,33 @@ $('#publish-created-pack').onclick=()=>{
 };
 $('#create-pack').onclick=async()=>{if(!packConfig||!selected.length)return;const b=$('#create-pack');b.disabled=true;$('#create-status').textContent='Resolvendo dependências e preparando o arquivo…';$('#download-pack').hidden=true;try{const r=await fetch('/api/packs/create',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...packConfig,projects:selected})});if(!r.ok){const d=await r.json().catch(()=>({}));throw Error(d.error||'Não foi possível criar o modpack')}const blob=await r.blob();const url=URL.createObjectURL(blob),link=$('#download-pack');link.href=url;link.download=packConfig.name.replace(/[^\p{L}\p{N} _-]/gu,'').slice(0,60)+'.mrpack';link.textContent='Baixar '+link.download;link.hidden=false;createdPackForCommunity={name:packConfig.name,minecraft_version:packConfig.minecraft_version,loader:packConfig.loader,projects:selected.map(p=>({...p})),description:'Modpack '+packConfig.name+' para Minecraft '+packConfig.minecraft_version+' com '+packConfig.loader+'.'};$('#publish-created-pack').hidden=false;$('#create-status').textContent='Arquivo .mrpack pronto. Você também pode publicar os dados deste modpack na comunidade.';toast('Modpack criado!')}catch(e){$('#create-status').textContent=e.message;toast('Falha ao criar modpack')}finally{b.disabled=false}};
 
+// Localizador de IDs: consulta os catálogos oficiais e exibe os identificadores reais.
+$('#toggle-id-finder').onclick=()=>{const panel=$('#id-finder-panel'),open=panel.hidden;panel.hidden=!open;$('#toggle-id-finder').setAttribute('aria-expanded',String(open));if(open)$('#id-finder-name').focus()};
+async function findModIds(){
+ const name=$('#id-finder-name').value.trim(),version=$('#id-finder-version').value.trim(),loader=$('#id-finder-loader').value,provider=$('#id-finder-provider').value,button=$('#id-finder-search');
+ if(!name){$('#id-finder-status').textContent='Digite o nome do mod.';$('#id-finder-name').focus();return}
+ if(version&&!/^\\d+\\.\\d+(\\.\\d+)?$/.test(version)){ $('#id-finder-status').textContent='Use uma versão válida, por exemplo 1.12.2.';return}
+ button.disabled=true;$('#id-finder-status').textContent='Pesquisando nos catálogos…';$('#id-finder-results').innerHTML='';
+ const providers=provider==='both'?['modrinth','curseforge']:[provider];
+ const tasks=providers.map(async source=>{
+  const params=new URLSearchParams({query:name,limit:'20',page:'0',sort:'downloads_desc',type:'mods'});
+  if(version)params.set('game_version',version);if(loader)params.set('loader',loader);
+  const response=await fetch('/api/'+source+'/search?'+params),data=await response.json();
+  if(!response.ok)throw Error(source==='curseforge'?'CurseForge: '+(data.error||'indisponível'):'Modrinth: '+(data.error||'indisponível'));
+  return (data.results||[]).map(item=>({provider:source,id:String(item.id),name:item.title||item.name||name,description:item.description||item.summary||'',url:source==='modrinth'?'https://modrinth.com/mod/'+encodeURIComponent(item.slug||item.id):(item.websiteUrl||'https://www.curseforge.com/minecraft/mc-mods/'+encodeURIComponent(item.slug||'')),downloads:item.downloads||0}));
+ });
+ try{
+  const settled=await Promise.allSettled(tasks),found=settled.filter(x=>x.status==='fulfilled').flatMap(x=>x.value),errors=settled.filter(x=>x.status==='rejected').map(x=>x.reason.message);
+  const unique=[...new Map(found.map(x=>[x.provider+':'+x.id,x])).values()];
+  if(!unique.length){$('#id-finder-status').textContent=errors.length?errors.join(' • '):'Nenhum mod encontrado. Tente outro nome ou retire algum filtro.';return}
+  $('#id-finder-status').textContent=unique.length+' resultado(s) encontrado(s).'+(errors.length?' Alguns catálogos não responderam: '+errors.join(' • '):'');
+  $('#id-finder-results').innerHTML=unique.map((item,index)=>'<article class="result"><div class="id-result-icon">ID</div><div><h4>'+esc(item.name)+'</h4><p>'+esc(item.provider==='modrinth'?'Modrinth':'CurseForge')+' · '+Number(item.downloads).toLocaleString('pt-BR')+' downloads</p><p class="id-result-value">ID: <code>'+esc(item.id)+'</code></p><a href="'+esc(item.url)+'" target="_blank" rel="noopener noreferrer">Abrir projeto ↗</a></div><div class="result-foot"><button type="button" data-copy-mod-id="'+index+'">Copiar ID</button></div></article>').join('');
+  document.querySelectorAll('[data-copy-mod-id]').forEach(b=>b.onclick=async()=>{const item=unique[Number(b.dataset.copyModId)];try{await navigator.clipboard.writeText(item.id);toast('ID copiado!')}catch{const field=document.createElement('textarea');field.value=item.id;document.body.appendChild(field);field.select();const ok=document.execCommand('copy');field.remove();toast(ok?'ID copiado!':'Não foi possível copiar o ID.')}});
+ }catch(e){$('#id-finder-status').textContent=e.message||'Falha ao pesquisar.'}
+ finally{button.disabled=false}
+}
+$('#id-finder-search').onclick=findModIds;
+$('#id-finder-name').onkeydown=e=>{if(e.key==='Enter')findModIds()};
 document.querySelectorAll('[data-provider]').forEach(b=>b.onclick=()=>{const provider=b.dataset.provider;if($('#provider').value===provider)return;$('#provider').value=provider;document.querySelectorAll('[data-provider]').forEach(x=>{const active=x.dataset.provider===provider;x.classList.toggle('active',active);x.setAttribute('aria-pressed',String(active))});search(!$('#query').value.trim(),0)});$('#search-btn').onclick=()=>search(false,0);$('#query').onkeydown=e=>{if(e.key==='Enter')search(false,0)};
 document.querySelectorAll('[data-catalog-type]').forEach(button=>button.addEventListener('click',()=>{
  const type=button.dataset.catalogType;if(!['mods','resourcepacks','shaders','modpacks'].includes(type)||catalogType===type)return;
