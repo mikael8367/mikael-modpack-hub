@@ -217,7 +217,7 @@
       const params = new URLSearchParams({
         query: term,
         limit: '50',
-        page: '0',
+        page: String(page),
         sort: 'relevance',
         type: 'mods'
       });
