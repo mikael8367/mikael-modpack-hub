@@ -159,50 +159,51 @@
   }
 
   async function searchProjects(provider, name, signal) {
-    const searchTerms = [...new Set(aliasesFor(name))].slice(0, 3);
+    const searchTerms = [...new Set(aliasesFor(name))]
+      .filter(Boolean)
+      .slice(0, 3);
     const candidates = new Map();
     const mergeResults = (data) => {
       for (const project of data.results || []) {
         if (project && project.id != null) candidates.set(String(project.id), project);
       }
     };
-    let ranked = searchCore.rankProjects([], name);
+    const rank = () => searchCore.rankProjects([...candidates.values()], name);
 
-    // Primeira passagem: pesquisa com filtros de versão e loader para priorizar
-    // resultados relevantes. Consulta aliases em vez de aceitar títulos parecidos.
-    for (const term of searchTerms) {
+    const requestSearch = async (term, filtered) => {
       const params = new URLSearchParams({
         query: term,
         limit: '50',
         page: '0',
         sort: 'downloads_desc',
-        type: 'mods',
-        game_version: packConfig.minecraft_version
+        type: 'mods'
       });
-      if (packConfig.loader && packConfig.loader !== 'vanilla') {
-        params.set('loader', packConfig.loader);
+      if (filtered) {
+        params.set('game_version', packConfig.minecraft_version);
+        if (packConfig.loader && packConfig.loader !== 'vanilla') {
+          params.set('loader', packConfig.loader);
+        }
       }
       const data = await fetchJson('/api/' + provider + '/search?' + params.toString(), signal);
       mergeResults(data);
-      ranked = searchCore.rankProjects([...candidates.values()], name);
+      return rank();
+    };
+
+    let ranked = rank();
+
+    // Fase 1: consulta com filtros para reduzir resultados incompatíveis.
+    for (const term of searchTerms) {
+      ranked = await requestSearch(term, true);
       if (ranked.exact.length) break;
     }
 
-    // Segunda passagem: alguns projetos antigos não aparecem quando o catálogo
-    // filtra a busca por loader/versão. A busca ampla só descobre candidatos;
-    // os arquivos continuam sujeitos à validação estrita abaixo.
-    if (!ranked.exact.length &&
-        (packConfig.minecraft_version || (packConfig.loader && packConfig.loader !== 'vanilla'))) {
-      const params = new URLSearchParams({
-        query: name,
-        limit: '50',
-        page: '0',
-        sort: 'downloads_desc',
-        type: 'mods'
-      });
-      const data = await fetchJson('/api/' + provider + '/search?' + params.toString(), signal);
-      mergeResults(data);
-      ranked = searchCore.rankProjects([...candidates.values()], name);
+    // Fase 2: quando o filtro do catálogo esconde projetos antigos, repete
+    // os termos/aliases sem filtro. Compatibilidade ainda é conferida no arquivo.
+    if (!ranked.exact.length) {
+      for (const term of searchTerms) {
+        ranked = await requestSearch(term, false);
+        if (ranked.exact.length) break;
+      }
     }
 
     return ranked;
@@ -247,12 +248,12 @@
     if (!ranked.exact.length) {
       return {
         missing: true,
-        reason: 'Nenhum título ou alias exato encontrado.',
+        reason: 'Nenhum título ou alias exato encontrado após busca por aliases e consulta ampliada.',
         suggestions: ranked.suggestions.slice(0, 3)
       };
     }
 
-    for (const match of ranked.exact) {
+    for (const match of ranked.exact.slice(0, 8)) {
       const project = match.project;
       const file = await findCompatibleFile(provider, project, signal);
       if (file) return { provider, project, file, versionName: file.name };
