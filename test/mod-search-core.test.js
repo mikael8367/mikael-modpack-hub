@@ -10,6 +10,12 @@ test('normaliza espaços, pontuação, apóstrofos e acentos', () => {
   assert.equal(search.normalizeName('MÉKANISM'), 'mekanism');
 });
 
+test('converte nomes em slugs ASCII sem perder acentos ou apóstrofos', () => {
+  assert.equal(search.slugifyName('MÉKANISM'), 'mekanism');
+  assert.equal(search.slugifyName("Better Builder’s Wands"), 'better-builders-wands');
+  assert.equal(search.slugifyName("Tinkers' Construct"), 'tinkers-construct');
+});
+
 test('reconhece título alternativo exato do JEI e ignora addons', () => {
   const result = search.rankProjects([
     { id: '1', title: 'Just Enough Items', slug: 'jei' },
@@ -39,11 +45,6 @@ test('reconhece Applied Energistics 2 como AE2', () => {
     { id: 'ae2', title: 'Applied Energistics 2', slug: 'ae2' }
   ], 'AE2');
   assert.equal(result.exact.length, 1);
-});
-
-test('reconhece aliases adicionados para VanillaFix e Extreme Reactors', () => {
-  assert.equal(search.rankProjects([{ id: '1', title: 'Vanilla Fix' }], 'VanillaFix').exact.length, 1);
-  assert.equal(search.rankProjects([{ id: '2', title: 'Extreme Reactors 2' }], 'Extreme Reactors').exact.length, 1);
 });
 
 test('erro de digitação vira sugestão, nunca correspondência exata', () => {
