@@ -143,4 +143,18 @@ test('remove projetos duplicados retornados por consultas diferentes', () => {
   const result = search.rankProjects([project, { ...project }], 'Chisel');
   assert.equal(result.exact.length, 1);
 });
-\n\ntest('reconhece variantes de nomes da lista legada', () => {\n  const cases = [\n    ['Ex Nihilo: Creatio', 'Ex Nihilo Creatio'],\n    ['Ender Core', 'EnderCore'],\n    ['Extra Utilities 2', 'ExtraUtilities2'],\n    ['Environmental Tech', 'EnvironmentalTech'],\n    ['Journey Map', 'JourneyMap']\n  ];\n  for (const [title, requested] of cases) {\n    const result = search.rankProjects([{ id: title, title }], requested);\n    assert.equal(result.exact.length, 1, requested);\n  }\n});\n
+
+
+test('reconhece variantes de nomes da lista legada', () => {
+  const cases = [
+    ['Ex Nihilo: Creatio', 'Ex Nihilo Creatio'],
+    ['Ender Core', 'EnderCore'],
+    ['Extra Utilities 2', 'ExtraUtilities2'],
+    ['Environmental Tech', 'EnvironmentalTech'],
+    ['Journey Map', 'JourneyMap']
+  ];
+  for (const [title, requested] of cases) {
+    const result = search.rankProjects([{ id: title, title }], requested);
+    assert.equal(result.exact.length, 1, requested);
+  }
+});
