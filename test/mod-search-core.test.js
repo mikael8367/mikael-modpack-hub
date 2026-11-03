@@ -40,6 +40,12 @@ test('reconhece aliases com pontuação diferente', () => {
   assert.equal(result.exact.length, 1);
 });
 
+test('usa todas as variantes de alias para montar slugs de catálogo', () => {
+  const slugs = search.aliasesFor('AE2').map(search.slugifyName);
+  assert.ok(slugs.includes('applied-energistics-2'));
+  assert.ok(slugs.includes('ae2'));
+});
+
 test('reconhece Applied Energistics 2 como AE2', () => {
   const result = search.rankProjects([
     { id: 'ae2', title: 'Applied Energistics 2', slug: 'ae2' }
