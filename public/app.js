@@ -125,7 +125,7 @@ $('#toggle-id-finder').onclick=()=>{const panel=$('#id-finder-panel'),open=panel
 async function findModIds(){
  const name=$('#id-finder-name').value.trim(),version=$('#id-finder-version').value.trim(),loader=$('#id-finder-loader').value,provider=$('#id-finder-provider').value,button=$('#id-finder-search');
  if(!name){$('#id-finder-status').textContent='Digite o nome do mod.';$('#id-finder-name').focus();return}
- if(version&&!/^\\d+\\.\\d+(\\.\\d+)?$/.test(version)){ $('#id-finder-status').textContent='Use uma versão válida, por exemplo 1.12.2.';return}
+ if(version&&!/^\d+\.\d+(\.\d+)?$/.test(version)){ $('#id-finder-status').textContent='Use uma versão válida, por exemplo 1.12.2.';return}
  button.disabled=true;$('#id-finder-status').textContent='Pesquisando nos catálogos…';$('#id-finder-results').innerHTML='';
  const providers=provider==='both'?['modrinth','curseforge']:[provider];
  const tasks=providers.map(async source=>{
