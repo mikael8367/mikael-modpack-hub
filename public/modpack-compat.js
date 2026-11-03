@@ -71,6 +71,11 @@
     return [name];
   }
 
+  function sameModName(first, second) {
+    const firstNames = new Set(aliasesFor(first).map(normalize));
+    return aliasesFor(second).some((name) => firstNames.has(normalize(name)));
+  }
+
   function addResult(message, kind) {
     const output = $('#bulk-import-results');
     if (!output) return;
@@ -236,6 +241,10 @@
         ' mods. O limite é 100 por modpack; divida a lista em duas partes.';
       return;
     }
+    if (selected.length + names.length > 100) {
+      status.textContent = 'Já existem ' + selected.length + ' mods selecionados. Com esta lista, o modpack ultrapassaria o limite total de 100. Remova alguns ou importe uma lista menor.';
+      return;
+    }
 
     importCancelled = false;
     activeController = new AbortController();
@@ -295,10 +304,9 @@
           game_version: packConfig.minecraft_version,
           loader: packConfig.loader === 'vanilla' ? '' : packConfig.loader
         };
-        const normalizedName = normalize(item.name);
         const alreadyAdded = selected.some((current) =>
           (current.provider === item.provider && String(current.id) === item.id) ||
-          normalize(current.name) === normalizedName
+          sameModName(current.name, item.name)
         );
         if (alreadyAdded) {
           duplicates++;
@@ -402,9 +410,9 @@
       if (!selected.length) findings.push('Nenhum mod foi selecionado.');
       for (let index = 0; index < selected.length; index++) {
         const project = selected[index];
-        const key = normalize(project.name);
-        if (seenNames.has(key)) findings.push('Possível duplicata: ' + project.name + '.');
-        seenNames.add(key);
+        const duplicate = [...seenNames].some((name) => sameModName(name, project.name));
+        if (duplicate) findings.push('Possível duplicata: ' + project.name + '.');
+        seenNames.add(project.name);
         if (project.game_version && project.game_version !== packConfig.minecraft_version) {
           findings.push(project.name + ': Minecraft ' + project.game_version +
             ' diferente de ' + packConfig.minecraft_version + '.');
