@@ -143,8 +143,8 @@ async function addModsFromText(){
     const searchData=await readPayload(searchResponse);
     if(!searchResponse.ok)throw Error(searchData.error||'Falha na pesquisa');
     const candidates=searchData.results||[];
-    const project=candidates.find(x=>normalize(x.title||x.name)===normalize(name))||candidates[0];
-    if(!project)throw Error('Projeto não encontrado');
+    const project=candidates.find(x=>normalize(x.title||x.name)===normalize(name));
+    if(!project)throw Error(candidates.length?'Correspondência exata não encontrada; nenhum resultado parecido foi adicionado.':'Projeto não encontrado');
     let file=null,versionName='';
     if(packProvider==='modrinth'){
      const vr=await fetch('/api/modrinth/project/'+encodeURIComponent(project.id)+'/versions?game_version='+encodeURIComponent(packConfig.minecraft_version)+(loader?'&loader='+encodeURIComponent(loader):''));
