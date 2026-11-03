@@ -126,11 +126,17 @@
     let data;
     try { data = raw ? JSON.parse(raw) : {}; }
     catch {
-      throw new Error(response.status === 429
+      const parseError = new Error(response.status === 429
         ? 'O limite de requisições foi atingido.'
         : 'Resposta inválida do servidor (HTTP ' + response.status + ').');
+      parseError.status = response.status;
+      throw parseError;
     }
-    if (!response.ok) throw new Error(data.error || ('Erro HTTP ' + response.status));
+    if (!response.ok) {
+      const responseError = new Error(data.error || ('Erro HTTP ' + response.status));
+      responseError.status = response.status;
+      throw responseError;
+    }
     return data;
   }
 
@@ -171,6 +177,28 @@
       }
     };
     const rank = () => searchCore.rankProjects([...candidates.values()], name);
+
+    // Modrinth aceita slug na rota de consulta do projeto. Fazemos esta
+    // tentativa determinística antes da pesquisa textual do catálogo.
+    if (provider === 'modrinth') {
+      const slugs = [...new Set(searchTerms.map(catalogSlug).filter(Boolean))];
+      for (const slug of slugs) {
+        try {
+          const data = await fetchJson(
+            '/api/modrinth/project/' + encodeURIComponent(slug), signal
+          );
+          if (data.project && data.project.id != null &&
+              (!data.project.project_type || data.project.project_type === 'mod')) {
+            candidates.set(String(data.project.id), data.project);
+            const ranked = rank();
+            if (ranked.exact.length) return ranked;
+          }
+        } catch (error) {
+          if (signal && signal.aborted) throw error;
+          if (error.status !== 404) throw error;
+        }
+      }
+    }
 
     // CurseForge oferece busca direta por slug (junto de classId), mais precisa
     // que uma busca textual ampla. Slug nunca substitui a validação do título/arquivo.
