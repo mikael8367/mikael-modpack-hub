@@ -168,7 +168,7 @@
 
   async function searchProjects(provider, name, signal) {
     const allAliases = [...new Set(aliasesFor(name))].filter(Boolean);
-    const searchTerms = allAliases.slice(0, 2);
+    // Consulta todos os aliases conhecidos; limitar a dois escondia títulos alternativos.\n    const searchTerms = allAliases;
     const slugTerms = [...new Set(allAliases.map(catalogSlug).filter(Boolean))];
     const candidates = new Map();
     const mergeResults = (data) => {
@@ -213,7 +213,7 @@
       }
     }
 
-    const requestSearch = async (term, filtered) => {
+    const requestSearch = async (term, filtered, page = 0) => {
       const params = new URLSearchParams({
         query: term,
         limit: '50',
