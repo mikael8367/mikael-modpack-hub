@@ -145,6 +145,17 @@ test('remove projetos duplicados retornados por consultas diferentes', () => {
 });
 
 
+test('reconhece nomes completos com siglas entre parênteses', () => {
+  const cases = [
+    ['Just Enough Items (JEI)', 'JEI'],
+    ['ConnectedTexturesMod (CTM)', 'ConnectedTexturesMod']
+  ];
+  for (const [title, requested] of cases) {
+    const result = search.rankProjects([{ id: title, title }], requested);
+    assert.equal(result.exact.length, 1, requested);
+  }
+});
+
 test('reconhece variantes de nomes da lista legada', () => {
   const cases = [
     ['Ex Nihilo: Creatio', 'Ex Nihilo Creatio'],
