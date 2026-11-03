@@ -20,10 +20,11 @@ test('reconhece título alternativo exato do JEI e ignora addons', () => {
   assert.equal(result.suggestions.length, 0);
 });
 
-test('slug exato não vence título conflitante', () => {
+test('slug exato com título conflitante exige confirmação manual', () => {
   const result = search.rankProjects([{ id: '1', title: 'JEI Addons', slug: 'jei' }], 'JEI');
   assert.equal(result.exact.length, 0);
-  assert.equal(result.suggestions.length, 0);
+  assert.equal(result.suggestions.length, 1);
+  assert.equal(result.suggestions[0].matchType, 'slug-review');
 });
 
 test('reconhece aliases com pontuação diferente', () => {
