@@ -111,18 +111,23 @@
   async function fetchJson(url, signal) {
     let lastError;
     for (let attempt = 0; attempt < 2; attempt++) {
+      let response;
       try {
-        const response = await fetch(url, { headers: { Accept: 'application/json' }, signal });
-        if ([429, 502, 503, 504].includes(response.status) && attempt === 0) {
-          await new Promise((resolve) => setTimeout(resolve, 900));
-          continue;
-        }
-        return await readResponse(response);
+        response = await fetch(url, { headers: { Accept: 'application/json' }, signal });
       } catch (error) {
         if (signal && signal.aborted) throw error;
         lastError = error;
-        if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 500));
+        if (attempt === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          continue;
+        }
+        throw lastError;
       }
+      if ([429, 502, 503, 504].includes(response.status) && attempt === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 900));
+        continue;
+      }
+      return await readResponse(response);
     }
     throw lastError || new Error('Falha ao consultar o catálogo.');
   }
@@ -147,7 +152,7 @@
   async function searchProjects(provider, name, signal) {
     const aliases = aliasesFor(name);
     const candidates = new Map();
-    const searchTerms = [...new Set([name, ...aliases])].slice(0, 3);
+    const searchTerms = [...new Set([name, ...aliases])].slice(0, 2);
     for (const term of searchTerms) {
       const params = new URLSearchParams({
         query: term,
@@ -192,8 +197,7 @@
       // O endpoint do Hub já aplica modLoaderType quando loader=forge/fabric etc.
       // Mods antigos podem não devolver a propriedade modLoader, mesmo após esse filtro.
       const loaderOk = packConfig.loader === 'vanilla' ||
-        (file.loaders || []).includes(packConfig.loader) ||
-        (packConfig.loader === 'forge' && (file.loaders || []).length === 0);
+        (file.loaders || []).includes(packConfig.loader);
       return gameOk && loaderOk;
     });
     if (!chosen) return null;
@@ -383,8 +387,7 @@
       String(file.id) === String(project.version_id) &&
       (file.gameVersions || []).includes(packConfig.minecraft_version) &&
       (packConfig.loader === 'vanilla' ||
-        (file.loaders || []).includes(packConfig.loader) ||
-        (packConfig.loader === 'forge' && (file.loaders || []).length === 0))
+        (file.loaders || []).includes(packConfig.loader))
     );
   }
 
