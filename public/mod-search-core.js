@@ -27,8 +27,6 @@
     ['entityculling', 'Entity Culling'],
     ['culleaves', 'Cull Leaves'],
     ['smoothboot', 'Smooth Boot'],
-    ['vanillafix', 'Vanilla Fix'],
-    ['extremereactors', 'Extreme Reactors 2'],
     ['ftblibrary', 'FTB Library'],
     ['ftbutilities', 'FTB Utilities'],
     ['ftbbackups', 'FTB Backups'],
@@ -41,6 +39,14 @@
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '');
+
+  const slugifyName = (value) => String(value || '')
+    .toLocaleLowerCase('pt-BR')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 
   const aliasLookup = new Map();
   for (const group of ALIAS_GROUPS) {
@@ -176,6 +182,7 @@
 
   globalThis.MikaelModSearch = Object.freeze({
     normalizeName,
+    slugifyName,
     aliasesFor,
     scoreProject,
     rankProjects,
