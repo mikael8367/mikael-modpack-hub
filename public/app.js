@@ -25,7 +25,7 @@ $('#tutorial-next').onclick=()=>{if(tutorialIndex<tutorialSteps.length-1){tutori
 $('#tutorial-skip').onclick=closeTutorial;
 $('#tutorial-replay').onclick=openTutorial;
 if(!localStorage.getItem('modpack-hub-tutorial-v1'))openTutorial();
-let popularLoaded=false;function go(id){document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===id));window.scrollTo({top:0,behavior:'smooth'});if(id==='search'&&!popularLoaded)search(true)}
+let popularLoaded=false;function go(id){if(id==='ai')refreshAiStatus();document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===id));window.scrollTo({top:0,behavior:'smooth'});if(id==='search'&&!popularLoaded)search(true)}
 document.querySelectorAll('[data-tab]').forEach(x=>x.onclick=()=>go(x.dataset.tab));document.querySelectorAll('[data-go]').forEach(x=>x.onclick=()=>go(x.dataset.go));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function status(){try{const d=await(await fetch('/health')).json();$('#status').textContent=d.ok?'API online':'Indisponível';$('#mr-state').textContent='API pública disponível';$('#cf-state').textContent=d.providers.curseforge?'Chave configurada':'Chave não configurada';$('#settings-cf').textContent=d.providers.curseforge?'Configurado no servidor':'Adicione CURSEFORGE_API_KEY no Render';}catch{$('#status').textContent='Sem conexão'}}
@@ -628,3 +628,33 @@ $('#crash-analyze').onclick=async()=>{
  finally{button.disabled=false;button.textContent='Analisar arquivos'}
 };
 $('#crash-copy').onclick=async()=>{if(!crashReportText)return toast('Nenhum relatório disponível.');try{if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(crashReportText);else{const area=document.createElement('textarea');area.value=crashReportText;document.body.appendChild(area);area.select();document.execCommand('copy');area.remove()}toast('Relatório copiado.')}catch{toast('Não foi possível copiar automaticamente.')}};
+
+
+const aiChatHistory=[];
+function appendAiMessage(role,text){
+ const chat=$('#ai-chat'),article=document.createElement('article'),label=document.createElement('b'),body=document.createElement('p');
+ article.className='ai-message '+(role==='user'?'user':'assistant');
+ label.textContent=role==='user'?'Você':'Mikael AI';body.textContent=text;
+ article.append(label,body);chat.appendChild(article);chat.scrollTop=chat.scrollHeight;
+}
+async function refreshAiStatus(){
+ const statusEl=$('#ai-status');if(!statusEl)return;
+ try{const r=await fetch('/api/ai/status');const d=await r.json();statusEl.textContent=d.message||'Status indisponível';statusEl.dataset.state=d.configured?'ready':d.online?'setup':'offline';}
+ catch{statusEl.textContent='Não foi possível verificar a Mikael AI.';statusEl.dataset.state='offline';}
+}
+$('#ai-form')?.addEventListener('submit',async event=>{
+ event.preventDefault();const input=$('#ai-input'),button=$('#ai-send'),message=input.value.trim();if(!message)return;
+ if(message.length>12000)return toast('A mensagem passou do limite.');
+ appendAiMessage('user',message);input.value='';button.disabled=true;button.textContent='Pensando…';
+ const pending=document.createElement('article');pending.className='ai-message assistant ai-pending';pending.textContent='Mikael AI está analisando…';$('#ai-chat').appendChild(pending);
+ try{
+  const response=await fetch('/api/ai/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,history:aiChatHistory.slice(-12)})});
+  const data=await response.json().catch(()=>({}));
+  pending.remove();
+  if(!response.ok||!data.ok){appendAiMessage('assistant',data.error||'Não foi possível obter uma resposta.');return;}
+  aiChatHistory.push({role:'user',text:message},{role:'model',text:data.answer});appendAiMessage('assistant',data.answer);
+ }catch{pending.remove();appendAiMessage('assistant','Falha de conexão. Verifique se os dois serviços Render estão online e tente novamente.');}
+ finally{button.disabled=false;button.textContent='Enviar';input.focus();}
+});
+$('#ai-input')?.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();$('#ai-form').requestSubmit();}});
+$('#ai-clear')?.addEventListener('click',()=>{aiChatHistory.length=0;$('#ai-chat').innerHTML='';appendAiMessage('assistant','Conversa limpa. Pode enviar sua próxima dúvida sobre Minecraft!');});
