@@ -209,6 +209,36 @@ app.post('/api/packs/create',async(req,res)=>{
  }catch(e){console.error('Pack create:',e.message);if(!res.headersSent)res.status(e.status||400).json({error:e.message||'Falha ao criar modpack.'});else res.destroy(e)}
 });
 
+
+const mikaelAiUrl = (process.env.MIKAEL_AI_API_URL || '').replace(/\/+$/, '');
+app.get('/api/ai/status', async (_req,res) => {
+  if (!mikaelAiUrl) return res.json({ok:false,configured:false,online:false,message:'A API da Mikael AI ainda não foi conectada.'});
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(),6000);
+  try {
+    const r = await fetch(mikaelAiUrl+'/health',{signal:controller.signal});
+    const data = await r.json().catch(()=>({}));
+    res.json({ok:true,configured:Boolean(data.aiConfigured),online:Boolean(r.ok&&data.ok),model:data.model||null,message:data.aiConfigured?'Mikael AI pronta para conversar.':'Serviço online; falta configurar a chave do modelo de IA.'});
+  } catch {
+    res.status(502).json({ok:false,configured:false,online:false,message:'Não foi possível alcançar o serviço separado da Mikael AI.'});
+  } finally { clearTimeout(timer); }
+});
+app.post('/api/ai/chat', async (req,res) => {
+  if (!mikaelAiUrl || !process.env.MIKAEL_AI_API_KEY) return res.status(503).json({ok:false,error:'A conexão segura com a Mikael AI ainda não foi configurada no Render.'});
+  const message = clean(req.body?.message,12000);
+  if (!message) return res.status(400).json({ok:false,error:'Digite uma mensagem.'});
+  const history = Array.isArray(req.body?.history) ? req.body.history.slice(-12).filter(x=>x&&['user','model'].includes(x.role)&&typeof x.text==='string').map(x=>({role:x.role,text:x.text.slice(0,12000)})) : [];
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(),50000);
+  try {
+    const r = await fetch(mikaelAiUrl+'/v1/chat',{method:'POST',headers:{'Content-Type':'application/json','X-API-Key':process.env.MIKAEL_AI_API_KEY},body:JSON.stringify({message,history}),signal:controller.signal});
+    const data = await r.json().catch(()=>({}));
+    res.status(r.status).json(data);
+  } catch (error) {
+    res.status(error.name==='AbortError'?504:502).json({ok:false,error:error.name==='AbortError'?'A Mikael AI demorou demais para responder.':'Falha ao conectar à Mikael AI.'});
+  } finally { clearTimeout(timer); }
+});
+
 app.get('/docs',(_req,res)=>res.sendFile(path.join(root,'public','docs.html')));
 app.get('*',(_req,res)=>res.sendFile(path.join(root,'public','index.html')));
 app.use((err,_req,res,_next)=>{console.error(err.message);res.status(500).json({error:'Erro interno.'});});
