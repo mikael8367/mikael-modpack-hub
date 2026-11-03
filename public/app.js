@@ -127,54 +127,58 @@ async function addModsFromText(){
  if(!names.length){status.textContent='Cole pelo menos um nome de mod, um por linha.';return}
  if(names.length>200){status.textContent='Foram identificados '+names.length+' mods. O limite é 200 por operação; divida a lista em duas partes.';return}
  button.disabled=true;output.innerHTML='';
- let added=0,failed=[];
+ let added=0,failed=[],fallbackCount=0;
  status.textContent='Lista reconhecida: '+names.length+' mods. Iniciando pesquisa…';
  const loader=packConfig.loader==='vanilla'?'':packConfig.loader;
  const normalize=value=>String(value||'').toLocaleLowerCase('pt-BR').replace(/[^a-z0-9]+/g,'').trim();
  const readPayload=async response=>{const body=await response.text();try{return JSON.parse(body)}catch{throw Error(response.status===429?'Limite de requisições atingido. O Hub vai precisar aguardar antes de continuar.':'Resposta inválida do servidor (HTTP '+response.status+'): '+body.slice(0,100))}};
+ async function findCompatible(provider,name){
+  const params=new URLSearchParams({query:name,limit:'10',page:'0',sort:'downloads_desc',type:'mods',game_version:packConfig.minecraft_version});
+  if(loader)params.set('loader',loader);
+  const sr=await fetch('/api/'+provider+'/search?'+params),sd=await readPayload(sr);
+  if(!sr.ok)throw Error(sd.error||'Falha na pesquisa '+provider);
+  const project=(sd.results||[]).find(x=>normalize(x.title||x.name)===normalize(name));
+  if(!project)return {missing:true,reason:(sd.results||[]).length?'Nome exato não encontrado':'Projeto não encontrado'};
+  if(provider==='modrinth'){
+   const vr=await fetch('/api/modrinth/project/'+encodeURIComponent(project.id)+'/versions?game_version='+encodeURIComponent(packConfig.minecraft_version)+(loader?'&loader='+encodeURIComponent(loader):''));
+   const vd=await readPayload(vr);
+   if(!vr.ok)throw Error(vd.error||'Falha ao consultar versões no Modrinth');
+   const compatible=(vd.versions||[]).filter(v=>(v.game_versions||[]).includes(packConfig.minecraft_version)&&(packConfig.loader==='vanilla'||(v.loaders||[]).includes(packConfig.loader)));
+   const chosen=compatible[0],asset=chosen?.files?.find(x=>x.primary)||chosen?.files?.[0];
+   if(!chosen||!asset)return {missing:true,reason:'Projeto existe, mas não tem arquivo compatível com '+packConfig.minecraft_version+' '+packConfig.loader};
+   return {provider,project,file:{id:String(chosen.id),name:chosen.name||chosen.version_number},versionName:chosen.name||chosen.version_number};
+  }
+  const fp=new URLSearchParams({limit:'50',game_version:packConfig.minecraft_version});
+  if(loader)fp.set('loader',loader);
+  const fr=await fetch('/api/curseforge/mod/'+encodeURIComponent(project.id)+'/files?'+fp),fd=await readPayload(fr);
+  if(!fr.ok)throw Error(fd.error||'Falha ao consultar arquivos no CurseForge');
+  const chosen=(fd.files||[]).find(f=>(f.gameVersions||[]).includes(packConfig.minecraft_version)&&(packConfig.loader==='vanilla'||(f.loaders||[]).includes(packConfig.loader)));
+  if(!chosen)return {missing:true,reason:'Projeto existe, mas não tem arquivo compatível com '+packConfig.minecraft_version+' '+packConfig.loader};
+  return {provider,project,file:{id:String(chosen.id),name:chosen.displayName||chosen.fileName},versionName:chosen.displayName||chosen.fileName};
+ }
  try{
   for(let index=0;index<names.length;index++){
    const name=names[index];
    status.textContent='('+ (index+1)+'/'+names.length+') Procurando '+name+'…';
    try{
-    const params=new URLSearchParams({query:name,limit:'10',page:'0',sort:'downloads_desc',type:'mods',game_version:packConfig.minecraft_version});
-    if(loader)params.set('loader',loader);
-    const searchResponse=await fetch('/api/'+packProvider+'/search?'+params);
-    const searchData=await readPayload(searchResponse);
-    if(!searchResponse.ok)throw Error(searchData.error||'Falha na pesquisa');
-    const candidates=searchData.results||[];
-    const project=candidates.find(x=>normalize(x.title||x.name)===normalize(name));
-    if(!project)throw Error(candidates.length?'Correspondência exata não encontrada; nenhum resultado parecido foi adicionado.':'Projeto não encontrado');
-    let file=null,versionName='';
-    if(packProvider==='modrinth'){
-     const vr=await fetch('/api/modrinth/project/'+encodeURIComponent(project.id)+'/versions?game_version='+encodeURIComponent(packConfig.minecraft_version)+(loader?'&loader='+encodeURIComponent(loader):''));
-     const vd=await readPayload(vr);
-     if(!vr.ok)throw Error(vd.error||'Falha ao consultar versões');
-     const compatible=(vd.versions||[]).filter(v=>(v.game_versions||[]).includes(packConfig.minecraft_version)&&(packConfig.loader==='vanilla'||(v.loaders||[]).includes(packConfig.loader)));
-     const chosen=compatible[0],asset=chosen?.files?.find(x=>x.primary)||chosen?.files?.[0];
-     if(!chosen||!asset)throw Error('Sem arquivo compatível com '+packConfig.minecraft_version+' '+packConfig.loader);
-     file={id:String(chosen.id),name:chosen.name||chosen.version_number};versionName=file.name;
-    }else{
-     const fp=new URLSearchParams({limit:'50',game_version:packConfig.minecraft_version});
-     if(loader)fp.set('loader',loader);
-     const fr=await fetch('/api/curseforge/mod/'+encodeURIComponent(project.id)+'/files?'+fp);
-     const fd=await readPayload(fr);
-     if(!fr.ok)throw Error(fd.error||'Falha ao consultar arquivos');
-     const chosen=(fd.files||[]).find(f=>(f.gameVersions||[]).includes(packConfig.minecraft_version)&&(packConfig.loader==='vanilla'||(f.loaders||[]).includes(packConfig.loader)));
-     if(!chosen)throw Error('Sem arquivo compatível com '+packConfig.minecraft_version+' '+packConfig.loader);
-     file={id:String(chosen.id),name:chosen.displayName||chosen.fileName};versionName=file.name;
+    let found=await findCompatible(packProvider,name),usedFallback=false;
+    if(found.missing&&packProvider==='curseforge'){
+     status.textContent='('+ (index+1)+'/'+names.length+') Não encontrado no CurseForge; tentando Modrinth: '+name+'…';
+     found=await findCompatible('modrinth',name);
+     usedFallback=!found.missing;
     }
-    const item={provider:packProvider,id:String(project.id),name:project.title||project.name||name,version_id:file.id,version_name:versionName,game_version:packConfig.minecraft_version,loader:packConfig.loader==='vanilla'?'':packConfig.loader};
+    if(found.missing)throw Error(found.reason+(packProvider==='curseforge'?' (também não encontrado no Modrinth)':''));
+    const item={provider:found.provider,id:String(found.project.id),name:found.project.title||found.project.name||name,version_id:found.file.id,version_name:found.versionName,game_version:packConfig.minecraft_version,loader:packConfig.loader==='vanilla'?'':packConfig.loader};
     if(selected.some(x=>x.provider===item.provider&&x.id===item.id))throw Error('Já está no modpack');
-    selected.push(item);added++;draw();
-    output.insertAdjacentHTML('beforeend','<div class="hint">✓ '+esc(item.name)+' — '+esc(versionName)+'</div>');
+    selected.push(item);added++;if(usedFallback)fallbackCount++;draw();
+    output.insertAdjacentHTML('beforeend','<div class="hint">✓ '+esc(item.name)+' — '+esc(item.version_name)+(usedFallback?' · encontrado no Modrinth (alternativa)':' · '+esc(found.provider))+'</div>');
    }catch(error){
     failed.push(name+': '+(error.message||'erro'));
     output.insertAdjacentHTML('beforeend','<div class="hint">✕ '+esc(name)+' — '+esc(error.message||'não encontrado')+'</div>');
    }
   }
   drawPackSelection();
-  status.textContent='Concluído: '+added+' adicionado(s), '+failed.length+' não adicionado(s), de '+names.length+' identificados. Revise a lista e toque em Baixar modpack.';
+  status.textContent='Concluído: '+added+' adicionado(s), '+failed.length+' não adicionado(s), de '+names.length+' identificados.'+(fallbackCount?' '+fallbackCount+' encontrado(s) no Modrinth após falha no CurseForge.':'')+' Revise a lista e toque em Baixar modpack.';
  }catch(error){
   status.textContent='A importação foi interrompida: '+(error.message||'erro inesperado')+'. Os mods já adicionados foram mantidos.';
  }finally{
