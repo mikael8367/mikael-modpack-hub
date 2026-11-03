@@ -28,7 +28,31 @@ if(!localStorage.getItem('modpack-hub-tutorial-v1'))openTutorial();
 let popularLoaded=false;function go(id){if(id==='ai')refreshAiStatus();document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===id));window.scrollTo({top:0,behavior:'smooth'});if(id==='search'&&!popularLoaded)search(true)}
 document.querySelectorAll('[data-tab]').forEach(x=>x.onclick=()=>go(x.dataset.tab));document.querySelectorAll('[data-go]').forEach(x=>x.onclick=()=>go(x.dataset.go));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-async function status(){try{const d=await(await fetch('/health')).json();$('#status').textContent=d.ok?'API online':'Indisponível';$('#mr-state').textContent='API pública disponível';$('#cf-state').textContent=d.providers.curseforge?'Chave configurada':'Chave não configurada';$('#settings-cf').textContent=d.providers.curseforge?'Configurado no servidor':'Adicione CURSEFORGE_API_KEY no Render';}catch{$('#status').textContent='Sem conexão'}}
+async function status(){
+ const label=$('#status');
+ if(label)label.textContent='Conectando…';
+ for(let attempt=0;attempt<3;attempt++){
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
+  try{
+   const response=await fetch('/health',{cache:'no-store',signal:controller.signal,headers:{Accept:'application/json'}});
+   if(!response.ok)throw Error('HTTP '+response.status);
+   const data=await response.json();
+   if(!data.ok)throw Error('API indisponível');
+   if(label)label.textContent='API online';
+   $('#mr-state').textContent='API pública disponível';
+   $('#cf-state').textContent=data.providers?.curseforge?'Chave configurada':'Chave não configurada';
+   $('#settings-cf').textContent=data.providers?.curseforge?'Configurado no servidor':'Adicione CURSEFORGE_API_KEY no Render';
+   return true;
+  }catch(error){}
+  finally{clearTimeout(timer)}
+  if(attempt<2)await new Promise(resolve=>setTimeout(resolve,700*(attempt+1)));
+ }
+ if(label)label.textContent='API indisponível';
+ const detail=$('#mr-state');if(detail)detail.textContent='Não foi possível alcançar o servidor do Hub.';
+ return false;
+}
+window.addEventListener('online',()=>status());
+window.addEventListener('offline',()=>{const label=$('#status');if(label)label.textContent='Sem internet';});
 let catalogType='mods';
 let modDetailsRequest=0;
 async function showModDetails(mod,provider){
