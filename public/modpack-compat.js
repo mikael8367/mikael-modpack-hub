@@ -168,7 +168,8 @@
 
   async function searchProjects(provider, name, signal) {
     const allAliases = [...new Set(aliasesFor(name))].filter(Boolean);
-    // Consulta todos os aliases conhecidos; limitar a dois escondia títulos alternativos.\n    const searchTerms = allAliases;
+    // Consulta todos os aliases conhecidos; limitar a dois escondia títulos alternativos.
+    const searchTerms = allAliases;
     const slugTerms = [...new Set(allAliases.map(catalogSlug).filter(Boolean))];
     const candidates = new Map();
     const mergeResults = (data) => {
