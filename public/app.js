@@ -30,6 +30,27 @@ document.querySelectorAll('[data-tab]').forEach(x=>x.onclick=()=>go(x.dataset.ta
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function status(){try{const d=await(await fetch('/health')).json();$('#status').textContent=d.ok?'API online':'Indisponível';$('#mr-state').textContent='API pública disponível';$('#cf-state').textContent=d.providers.curseforge?'Chave configurada':'Chave não configurada';$('#settings-cf').textContent=d.providers.curseforge?'Configurado no servidor':'Adicione CURSEFORGE_API_KEY no Render';}catch{$('#status').textContent='Sem conexão'}}
 let catalogType='mods';
+let modDetailsRequest=0;
+async function showModDetails(mod,provider){
+ const request=++modDetailsRequest,box=$('#mod-details'),id=String(mod.id),name=mod.title||mod.name||'Mod';
+ box.hidden=false;box.innerHTML='<div class="hint">Carregando detalhes de '+esc(name)+'…</div>';box.scrollIntoView({behavior:'smooth',block:'nearest'});
+ try{
+  const endpoint=provider==='modrinth'?'/api/modrinth/project/'+encodeURIComponent(id):'/api/curseforge/mod/'+encodeURIComponent(id);
+  const response=await fetch(endpoint),payload=await response.json();if(!response.ok)throw Error(payload.error||'Não foi possível carregar os detalhes.');
+  if(request!==modDetailsRequest)return;
+  const p=provider==='modrinth'?payload.project:payload.mod;if(!p)throw Error('A plataforma não retornou os detalhes do projeto.');
+  const title=p.title||p.name||name,description=p.description||p.summary||mod.description||mod.summary||'Sem descrição disponível.';
+  const gameVersions=provider==='modrinth'?(p.game_versions||mod.versions||[]):(p.latestFilesIndexes||[]).map(x=>x.gameVersion).filter(Boolean);
+  const loaders=provider==='modrinth'?(p.loaders||[]):(p.latestFilesIndexes||[]).map(x=>({1:'forge',2:'cauldron',3:'liteloader',4:'fabric',5:'quilt',6:'neoforge'}[x.modLoader]||'')).filter(Boolean);
+  const uniqueVersions=[...new Set(gameVersions)].sort((a,b)=>b.localeCompare(a,undefined,{numeric:true}));
+  const uniqueLoaders=[...new Set(loaders.map(x=>String(x).toLowerCase()))];
+  const url=provider==='modrinth'?'https://modrinth.com/'+(p.project_type==='modpack'?'modpack':'mod')+'/'+encodeURIComponent(p.slug||id):(p.links?.websiteUrl||mod.websiteUrl||'https://www.curseforge.com/minecraft/mc-mods/'+encodeURIComponent(mod.slug||id));
+  const facts=[['ID do projeto',id],['Plataforma',provider==='modrinth'?'Modrinth':'CurseForge'],['Autor',p.author||p.authors?.[0]?.name||'Não informado'],['Downloads',Number(p.downloads||mod.downloads||0).toLocaleString('pt-BR')],['Versões Minecraft',uniqueVersions.length?uniqueVersions.slice(0,45).join(', '):'Consulte os arquivos do projeto'],['Loaders',uniqueLoaders.length?uniqueLoaders.join(', '):'Não informado']];
+  box.innerHTML='<div class="mod-details-head"><div><span class="eyebrow">DETALHES DO MOD</span><h3>'+esc(title)+'</h3></div><button type="button" class="secondary" id="close-mod-details">Fechar</button></div><p class="mod-details-description">'+esc(description)+'</p><div class="mod-facts">'+facts.map(([label,value])=>'<div><small>'+esc(label)+'</small><p>'+esc(value)+'</p></div>').join('')+'</div><div class="mod-details-actions"><button type="button" class="primary" id="copy-detail-id">Copiar ID</button><a class="secondary mod-official-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Abrir página oficial ↗</a></div>';
+  $('#close-mod-details').onclick=()=>{box.hidden=true;box.innerHTML=''};
+  $('#copy-detail-id').onclick=async()=>{try{await navigator.clipboard.writeText(id);toast('ID copiado!')}catch{const input=document.createElement('textarea');input.value=id;document.body.appendChild(input);input.select();const ok=document.execCommand('copy');input.remove();toast(ok?'ID copiado!':'Não foi possível copiar o ID.')}};
+ }catch(e){if(request===modDetailsRequest)box.innerHTML='<div class="hint">'+esc(e.message||'Falha ao carregar detalhes.')+'</div><button type="button" class="secondary" id="close-mod-details">Fechar</button>';const close=$('#close-mod-details');if(close)close.onclick=()=>{box.hidden=true}}
+}
 async function search(popular=false,page=0){
  const requestId=++searchRequest,previousPage=currentPage;currentPage=Math.max(0,page);
  const q=$('#query').value.trim(),provider=$('#provider').value,sort=$('#sort-order').value,p=new URLSearchParams({limit:String(PAGE_SIZE),page:String(currentPage),sort,type:catalogType});
@@ -42,8 +63,9 @@ async function search(popular=false,page=0){
   if(requestId!==searchRequest)return false;if(!r.ok)throw Error(d.error||'Falha na busca');
   if(!q)popularLoaded=true;results=d.results||[];searchTotal=Number(d.total)||0;if(sort==='downloads_asc'||sort==='date_asc')results.reverse();
   if(!results.length){currentPage=previousPage;$('#results').innerHTML='<div class="empty">Não há mais resultados. Você chegou ao fim dos resultados disponíveis deste catálogo.</div>';renderPagination();return}
-  $('#results').innerHTML=results.map((m,i)=>'<article class="result" data-open="'+i+'" role="button" tabindex="0"><img src="'+esc(m.icon_url||m.logo||'')+'" alt=""><div><h4>'+esc(m.title||m.name)+'</h4><p>'+esc(m.description||m.summary||'')+'</p></div><div class="result-foot"><span>'+Number(m.downloads||0).toLocaleString('pt-BR')+' downloads</span><button data-open="'+i+'" type="button">Escolher versão</button></div></article>').join('');
-  document.querySelectorAll('[data-open]').forEach(b=>{const open=()=>openVersionPicker(results[Number(b.dataset.open)],provider,'download');b.onclick=e=>{e.stopPropagation();open()};if(b.tagName==='ARTICLE')b.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open()}}});
+  $('#mod-details').hidden=true;$('#mod-details').innerHTML='';
+  $('#results').innerHTML=results.map((m,i)=>'<article class="result mod-result" data-mod-open="'+i+'" role="button" tabindex="0" aria-label="Ver detalhes de '+esc(m.title||m.name)+'"><img src="'+esc(m.icon_url||m.logo||'')+'" alt=""><div><h4>'+esc(m.title||m.name)+'</h4><p>'+esc(m.description||m.summary||'')+'</p></div><div class="result-foot"><span>'+Number(m.downloads||0).toLocaleString('pt-BR')+' downloads</span><span class="open-details-label">Ver ID e detalhes ›</span></div></article>').join('');
+  document.querySelectorAll('[data-mod-open]').forEach(card=>{const open=()=>showModDetails(results[Number(card.dataset.modOpen)],provider);card.onclick=open;card.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open()}}});
   renderPagination();
  }catch(e){if(requestId!==searchRequest)return false;if(!q)popularLoaded=false;currentPage=previousPage;$('#results').innerHTML='<div class="empty">'+esc(e.message)+'<br><button id="retry-popular" class="secondary" type="button">Tentar novamente</button></div>';const retry=$('#retry-popular');if(retry)retry.onclick=()=>search(true,0);renderPagination();return false}
  return true;
