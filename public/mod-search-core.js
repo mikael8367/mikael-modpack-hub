@@ -221,7 +221,7 @@
       }
 
       const wantedTokens = tokenizeName(alias);
-      if (wantedTokens.length >= 2) {
+      if (wantedTokens.length >= 2 || wantedTokens.some((token) => token.length >= 5)) {
         for (const candidate of candidateNames) {
           const score = scoreTokenPhrase(wantedTokens, tokenizeName(candidate.value));
           if (score > best.score) {
