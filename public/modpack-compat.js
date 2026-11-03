@@ -158,10 +158,20 @@
     throw lastError || new Error('Falha ao consultar o catálogo.');
   }
 
+  function catalogSlug(value) {
+    return String(value || '')
+      .toLocaleLowerCase('pt-BR')
+      .normalize('NFKD')
+      .replace(/[\\u0300-\\u036f]/g, '')
+      .replace(/['’`"]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
   async function searchProjects(provider, name, signal) {
     const searchTerms = [...new Set(aliasesFor(name))]
       .filter(Boolean)
-      .slice(0, 3);
+      .slice(0, 2);
     const candidates = new Map();
     const mergeResults = (data) => {
       for (const project of data.results || []) {
@@ -170,12 +180,25 @@
     };
     const rank = () => searchCore.rankProjects([...candidates.values()], name);
 
+    // CurseForge oferece busca direta por slug (junto de classId), mais precisa
+    // que uma busca textual ampla. Slug nunca substitui a validação do título/arquivo.
+    if (provider === 'curseforge') {
+      const slugs = [...new Set(searchTerms.map(catalogSlug).filter(Boolean))];
+      for (const slug of slugs) {
+        const params = new URLSearchParams({ slug, limit: '50', page: '0', type: 'mods' });
+        const data = await fetchJson('/api/curseforge/search?' + params.toString(), signal);
+        mergeResults(data);
+        const ranked = rank();
+        if (ranked.exact.length) return ranked;
+      }
+    }
+
     const requestSearch = async (term, filtered) => {
       const params = new URLSearchParams({
         query: term,
         limit: '50',
         page: '0',
-        sort: 'downloads_desc',
+        sort: 'relevance',
         type: 'mods'
       });
       if (filtered) {
@@ -191,14 +214,14 @@
 
     let ranked = rank();
 
-    // Fase 1: consulta com filtros para reduzir resultados incompatíveis.
+    // Fase 1: pesquisa por relevância com filtros do modpack.
     for (const term of searchTerms) {
       ranked = await requestSearch(term, true);
       if (ranked.exact.length) break;
     }
 
-    // Fase 2: quando o filtro do catálogo esconde projetos antigos, repete
-    // os termos/aliases sem filtro. Compatibilidade ainda é conferida no arquivo.
+    // Fase 2: alguns projetos antigos desaparecem dos resultados filtrados.
+    // A busca ampla apenas localiza candidatos; os arquivos continuam validados.
     if (!ranked.exact.length) {
       for (const term of searchTerms) {
         ranked = await requestSearch(term, false);
