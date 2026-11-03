@@ -4,7 +4,7 @@
   // Aliases são relações explícitas entre títulos do mesmo projeto.
   // Não inclua aqui projetos complementares ou addons independentes.
   const ALIAS_GROUPS = [
-    ['jei', 'Just Enough Items'],
+    ['jei', 'Just Enough Items', 'Just Enough Items (JEI)'],
     ['voidislandcontrol', 'Void Island Control'],
     ['worldprimer', 'World Primer'],
     ['exnihilocreatio', 'Ex Nihilo: Creatio', 'Ex Nihilo Creatio'],
@@ -25,7 +25,7 @@
     ['fastworkbench', 'Fast Workbench'],
     ['fastfurnace', 'Fast Furnace'],
     ['memoryleakfix', 'Memory Leak Fix'],
-    ['connectedtexturesmod', 'Connected Textures Mod'],
+    ['connectedtexturesmod', 'Connected Textures Mod', 'ConnectedTexturesMod (CTM)', 'CTM'],
     ["tinkers'construct", 'Tinkers Construct', 'TConstruct'],
     ['tinkerscomplement', "Tinkers' Complement"],
     ["tinkers'toolleveling", 'Tinkers Tool Leveling'],
