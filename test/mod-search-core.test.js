@@ -10,13 +10,19 @@ test('normaliza espaços, pontuação, apóstrofos e acentos', () => {
   assert.equal(search.normalizeName('MÉKANISM'), 'mekanism');
 });
 
-test('reconhece título alternativo exato do JEI', () => {
+test('reconhece título alternativo exato do JEI e ignora addons', () => {
   const result = search.rankProjects([
     { id: '1', title: 'Just Enough Items', slug: 'jei' },
     { id: '2', title: 'JEI Addons', slug: 'jei-addons' }
   ], 'JEI');
   assert.equal(result.exact.length, 1);
   assert.equal(result.exact[0].project.id, '1');
+  assert.equal(result.suggestions.length, 0);
+});
+
+test('slug exato não vence título conflitante', () => {
+  const result = search.rankProjects([{ id: '1', title: 'JEI Addons', slug: 'jei' }], 'JEI');
+  assert.equal(result.exact.length, 0);
   assert.equal(result.suggestions.length, 0);
 });
 
@@ -34,13 +40,23 @@ test('reconhece Applied Energistics 2 como AE2', () => {
   assert.equal(result.exact.length, 1);
 });
 
-test('typo vira sugestão, nunca correspondência exata', () => {
-  const result = search.rankProjects([
-    { id: '1', title: 'Mekanism', slug: 'mekanism' }
-  ], 'Mekanizm');
+test('reconhece aliases adicionados para VanillaFix e Extreme Reactors', () => {
+  assert.equal(search.rankProjects([{ id: '1', title: 'Vanilla Fix' }], 'VanillaFix').exact.length, 1);
+  assert.equal(search.rankProjects([{ id: '2', title: 'Extreme Reactors 2' }], 'Extreme Reactors').exact.length, 1);
+});
+
+test('erro de digitação vira sugestão, nunca correspondência exata', () => {
+  const result = search.rankProjects([{ id: '1', title: 'Mekanism', downloads: 1000 }], 'Mekanizm');
   assert.equal(result.exact.length, 0);
   assert.equal(result.suggestions.length, 1);
-  assert.ok(result.suggestions[0].score >= 0.72);
+  assert.ok(result.suggestions[0].score >= 0.84);
+});
+
+test('transposição de letras é reconhecida como sugestão', () => {
+  const result = search.rankProjects([{ id: '1', title: 'Mekanism' }], 'Mekansim');
+  assert.equal(result.exact.length, 0);
+  assert.equal(result.suggestions.length, 1);
+  assert.equal(search.damerauLevenshtein('mekansim', 'mekanism'), 1);
 });
 
 test('não confunde ProjectE com ProjectE Integration', () => {
@@ -60,11 +76,17 @@ test('não confunde Ender IO com Ender IO Endergy', () => {
 });
 
 test('não usa fuzzy em siglas curtas', () => {
-  const result = search.rankProjects([
-    { id: '1', title: 'JEI Addons', slug: 'jei-addons' }
-  ], 'JEI');
+  const result = search.rankProjects([{ id: '1', title: 'JEI Addons', slug: 'jei-addons' }], 'JEI');
   assert.equal(result.exact.length, 0);
   assert.equal(result.suggestions.length, 0);
+});
+
+test('prioriza título exato antes de aliases via slug', () => {
+  const result = search.rankProjects([
+    { id: 'slug', title: 'Other Project', slug: 'just-enough-items', downloads: 999999 },
+    { id: 'title', title: 'Just Enough Items', slug: 'jei', downloads: 1 }
+  ], 'JEI');
+  assert.equal(result.exact[0].project.id, 'title');
 });
 
 test('remove projetos duplicados retornados por consultas diferentes', () => {
