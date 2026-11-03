@@ -102,15 +102,82 @@
     return { display, slug };
   }
 
+  const TOKEN_METADATA = new Set([
+    'mod', 'minecraft', 'forge', 'fabric', 'official', 'legacy',
+    'reloaded', 'remastered', 'unofficial', 'java'
+  ]);
+  const TOKEN_DISTINCT_SUFFIXES = new Set([
+    'addon', 'addons', 'addition', 'additions', 'integration', 'integrations',
+    'endergy', 'expansion', 'expansions', 'extension', 'extensions',
+    'tweaks', 'compat', 'compatibility', 'support', 'plugin', 'plugins'
+  ]);
+
+  function tokenizeName(value) {
+    return String(value || '')
+      .toLocaleLowerCase('pt-BR')
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/['’]/g, '')
+      .match(/[a-z0-9]+/g) || [];
+  }
+
+  function scoreTokenPhrase(wantedTokens, candidateTokens) {
+    if (!wantedTokens.length || !candidateTokens.length ||
+        wantedTokens.length > candidateTokens.length) return 0;
+
+    const remaining = [...candidateTokens];
+    let similarityTotal = 0;
+
+    for (const wanted of wantedTokens) {
+      let bestIndex = -1;
+      let bestSimilarity = 0;
+
+      for (let index = 0; index < remaining.length; index++) {
+        const candidate = remaining[index];
+        if (candidate === wanted) {
+          bestIndex = index;
+          bestSimilarity = 1;
+          break;
+        }
+
+        // Não tenta adivinhar siglas ou palavras curtas.
+        if (wanted.length < 5 || candidate.length < 5) continue;
+        const maxLength = Math.max(wanted.length, candidate.length);
+        const maxDistance = maxLength <= 8 ? 1 : 2;
+        if (Math.abs(wanted.length - candidate.length) > maxDistance) continue;
+        const distance = damerauLevenshtein(wanted, candidate);
+        if (distance <= maxDistance) {
+          const score = 1 - distance / maxLength;
+          if (score > bestSimilarity) {
+            bestIndex = index;
+            bestSimilarity = score;
+          }
+        }
+      }
+
+      if (bestIndex < 0) return 0;
+      remaining.splice(bestIndex, 1);
+      similarityTotal += bestSimilarity;
+    }
+
+    // Addons, integrações e expansões são projetos separados do mod-base.
+    if (remaining.some((word) => TOKEN_DISTINCT_SUFFIXES.has(word))) return 0;
+    if (remaining.some((word) => !TOKEN_METADATA.has(word) && !/^\d+$/.test(word))) return 0;
+
+    const tokenSimilarity = similarityTotal / wantedTokens.length;
+    const titlePrecision = wantedTokens.length / candidateTokens.length;
+    return Math.min(0.97, tokenSimilarity * 0.88 + titlePrecision * 0.12);
+  }
+
   function scoreProject(project, requestedName) {
-    const expected = aliasesFor(requestedName).map(normalizeName).filter(Boolean);
+    const aliases = aliasesFor(requestedName);
+    const expected = aliases.map(normalizeName).filter(Boolean);
     const names = projectNames(project);
     if (!expected.length || (!names.display.length && !names.slug.length)) {
       return { project, score: 0, exact: false, matchedName: '', matchType: 'none' };
     }
 
-    // Título/nome exibido tem precedência sobre slug. Um slug igual não pode
-    // transformar "JEI Addons" em uma correspondência exata de "JEI".
+    // Título/nome exibido tem precedência sobre slug.
     for (const candidate of names.display) {
       if (expected.includes(candidate.normalized)) {
         return { project, score: 1, exact: true, matchedName: candidate.value, matchType: 'title' };
@@ -123,8 +190,7 @@
         }
       }
     } else {
-      // Slug exato com título divergente é um sinal forte, mas exige revisão
-      // humana (ex.: addons com slug semelhante nunca são instalados sozinhos).
+      // Slug exato com título divergente exige revisão manual.
       for (const candidate of names.slug) {
         if (expected.includes(candidate.normalized)) {
           return { project, score: 0.96, exact: false, matchedName: candidate.value, matchType: 'slug-review' };
@@ -132,23 +198,41 @@
       }
     }
 
-    // Fuzzy matching é exclusivamente uma sugestão manual. Siglas e nomes
-    // curtos não entram neste estágio, para evitar coincidências acidentais.
     let best = { project, score: 0, exact: false, matchedName: '', matchType: 'none' };
     const candidateNames = names.display.length ? names.display : names.slug;
-    for (const wanted of expected) {
-      if (wanted.length < 8) continue;
-      for (const candidate of candidateNames) {
-        const value = candidate.normalized;
-        if (value.length < 8) continue;
-        const maxLength = Math.max(wanted.length, value.length);
-        const maxEdits = maxLength <= 14 ? 1 : 2;
-        if (Math.abs(wanted.length - value.length) > maxEdits) continue;
-        const distance = damerauLevenshtein(wanted, value);
-        if (distance > maxEdits) continue;
-        const score = 1 - distance / maxLength;
-        if (score > best.score) {
-          best = { project, score, exact: false, matchedName: candidate.value, matchType: 'fuzzy' };
+
+    for (const alias of aliases) {
+      const wanted = normalizeName(alias);
+      if (wanted.length >= 8) {
+        for (const candidate of candidateNames) {
+          const value = candidate.normalized;
+          if (value.length < 8) continue;
+          const maxLength = Math.max(wanted.length, value.length);
+          const maxEdits = maxLength <= 14 ? 1 : 2;
+          if (Math.abs(wanted.length - value.length) > maxEdits) continue;
+          const distance = damerauLevenshtein(wanted, value);
+          if (distance <= maxEdits) {
+            const score = 1 - distance / maxLength;
+            if (score > best.score) {
+              best = { project, score, exact: false, matchedName: candidate.value, matchType: 'fuzzy' };
+            }
+          }
+        }
+      }
+
+      const wantedTokens = tokenizeName(alias);
+      if (wantedTokens.length >= 2) {
+        for (const candidate of candidateNames) {
+          const score = scoreTokenPhrase(wantedTokens, tokenizeName(candidate.value));
+          if (score > best.score) {
+            best = {
+              project,
+              score,
+              exact: false,
+              matchedName: candidate.value,
+              matchType: 'token-fuzzy'
+            };
+          }
         }
       }
     }
@@ -176,7 +260,7 @@
 
     return {
       exact: ranked.filter((entry) => entry.exact),
-      suggestions: ranked.filter((entry) => !entry.exact && entry.score >= 0.84)
+      suggestions: ranked.filter((entry) => !entry.exact && entry.score >= 0.80)
     };
   }
 
@@ -184,6 +268,7 @@
     normalizeName,
     slugifyName,
     aliasesFor,
+    tokenizeName,
     scoreProject,
     rankProjects,
     damerauLevenshtein
